@@ -28,9 +28,9 @@ def extract(text, mode='auto', suppliers=(), history=()):
         if match:draft['reference']=re.sub(r'\s','',match.group(1))
     find('receipt_no',[r'(?:sales\s+invoice|service\s+invoice|invoice|receipt|S\.?I\.?)\s*(?:no\.?|number|#)\s*[:#]?\s*([A-Z0-9-]+)'])
     find('tin',[r'\b(\d{3}[- ]\d{3}[- ]\d{3}(?:[- ]\d{3})?)\b'])
-    amount=r'(?:PHP|P|₱)?\s*([0-9][0-9,]*(?:\.\d{2})?)(?![\d.])'
+    amount=r'(?:PHP|P|₱|\$)?\s*([0-9][0-9,]*(?:\.\d{2})?)(?![\d.])'
     patterns=([r'^\s*amount\s*(?:sent|transferred)?\s*[:\n]?\s*'+amount,r'^\s*(?:PHP|₱)\s*([0-9][0-9,]*\.\d{2})\s*$'] if kind=='payment' else [r'(?:grand\s+total|total\s+(?:amount|sales)|amount\s+due)\s*[:\n]?\s*'+amount])
-    find('amount',patterns+[r'^\s*total\s*[:\n]?\s*'+amount])
+    find('amount',patterns+[r'^\s*total\s+amount\s+sent\s*[:\n]?\s*'+amount,r'^\s*total\s*[:\n]?\s*'+amount])
     if draft['amount']:draft['amount']=draft['amount'].replace(',','')
     for field,label in [('fee',r'(?:transfer\s+fee|service\s+(?:fee|charge)|fee)'),('withholding',r'(?:withholding(?:\s+tax)?|EWT)')]:
         find(field,[label+r'\s*[:\n]?\s*'+amount])

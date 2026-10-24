@@ -57,7 +57,7 @@ def install(app,db,records,cents):
                     if r['kind']!='payment':continue
                     key=r.get('date','') or 'Date missing'
                     if kind=='monthly' and key!='Date missing':key=key[:7]
-                    g=groups[key];principal=cents(r['amount']);fee=cents(r.get('fee'));total=principal+fee
+                    g=groups[key];g['personal']+=cents(r.get('personal_amount'));principal=cents(r['amount']);fee=cents(r.get('fee'));total=principal+fee
                     if r.get('personal') or r.get('treatment')=='personal':g['personal']+=total;continue
                     category=next(k for k in ['materials','costs','operating','allowances'] if DEFINITIONS[k][0]==collection(r))
                     g[category]+=total;g['principal']+=principal;g['fees']+=fee;g['total']+=total

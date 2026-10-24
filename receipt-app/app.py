@@ -260,6 +260,15 @@ def save():
         b['fee'] = cents(b.get('fee'))/100
         if b['amount'] <= 0: raise ValueError('Amount must be greater than zero')
     except ValueError as e: return jsonify(error=str(e)), 400
+    try:
+        personal=cents(b.get('personal_amount'))
+        if personal or b.get('transfer_amount') not in (None,''):
+            if b['kind']!='payment':raise ValueError('Split company/personal amounts on the payment, not the receipt')
+            transfer=cents(b.get('transfer_amount',b['amount']))
+            if personal>=transfer:raise ValueError('Personal portion must be less than the transfer amount')
+            b.update(transfer_amount=transfer/100,personal_amount=personal/100,amount=(transfer-personal)/100)
+            if b['amount']<=0:raise ValueError('Company amount must be greater than zero')
+    except ValueError as e:return jsonify(error=str(e)),400
     rid = b.get('id') or uuid.uuid4().hex
     with db() as c:
         old = c.execute('SELECT * FROM records WHERE id=?', (rid,)).fetchone()
@@ -391,7 +400,7 @@ def export():
         rs=records(c)
         for kind in ['payment','receipt']:
             s=w.create_sheet(kind.title()+'s')
-            fields=FIELDS+['settlement_amount','withholding','linked_receipt_numbers','allocated','remaining','source','source_row']
+            fields=FIELDS+['transfer_amount','personal_amount','personal_note','settlement_amount','withholding','linked_receipt_numbers','allocated','remaining','source','source_row']
             s.append(fields)
             for r in rs:
                 if r['kind']==kind:

@@ -32,3 +32,7 @@ class PaymentExtractionTests(unittest.TestCase):
         draft, warnings = extract('GCash\n+63 917 123 4567\nOct 23, 2026', 'payment')
         self.assertEqual(draft['reference'], '')
         self.assertIn('Missing reference', warnings)
+
+    def test_total_amount_sent_with_ocr_dollar_symbol(self):
+        draft,_=extract('Sent via GCash\nTotal Amount Sent $25,133.48\nRef No. 1234 567 890123', 'payment')
+        self.assertEqual(draft['amount'],'25133.48')

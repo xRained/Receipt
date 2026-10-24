@@ -200,9 +200,9 @@ def install(app,get_data,db,records,cents):
                 if not r.get('receipt_no'):r['receipt_no']=', '.join(dict.fromkeys(byid[a['receipt']].get('receipt_no','') for a in links if a['payment']==r['id']))
         w=openpyxl.Workbook();s=w.active;s.title='Material Expense'
         fields=['date','method','receipt_no','reference','company','remarks','tin','address','project','code','account','amount','fee']
-        s.append(['DATE','MODE OF PAYMENT','RECEIPT NO.','REF. NO','PAYEE','DESCRIPTION','TIN','ADDRESS','PROJECT','ACCOUNT CODE','ACCOUNT TITLE','AMOUNT','FEES','PAYABLE AMOUNT'])
+        s.append(['DATE','MODE OF PAYMENT','RECEIPT NO.','REF. NO','PAYEE','DESCRIPTION','TIN','ADDRESS','PROJECT','ACCOUNT CODE','ACCOUNT TITLE','AMOUNT','FEES','PAYABLE AMOUNT','FULL TRANSFER BEFORE FEES','PERSONAL PORTION EXCLUDED','PERSONAL NOTES'])
         def safe(v):return "'"+v if isinstance(v,str) and v.startswith(('=','+','-','@')) else v
-        for r in sorted(rs,key=lambda r:r.get('date','')):s.append([safe(r.get(k,'')) for k in fields]+[(cents(r['amount'])+cents(r.get('fee')))/100])
+        for r in sorted(rs,key=lambda r:r.get('date','')):s.append([safe(r.get(k,'')) for k in fields]+[(cents(r['amount'])+cents(r.get('fee')))/100,r.get('transfer_amount',r['amount']),r.get('personal_amount',0),safe(r.get('personal_note',''))])
         s.freeze_panes='A2';s.auto_filter.ref=s.dimensions
         for col in ['L','M','N']:
             for cell in s[col][1:]:cell.number_format='#,##0.00'

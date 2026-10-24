@@ -133,7 +133,7 @@ class ReviewApiTests(unittest.TestCase):
         self.assertEqual({r['method'] for r in rows},{'Online Payment','Bank','GCash','Cheque','Cash'})
         response=self.client.get('/api/materials/export?month=2026-10')
         w=openpyxl.load_workbook(io.BytesIO(response.data),read_only=True,data_only=True)
-        self.assertEqual(w['Material Expense'].max_column,14)
+        self.assertEqual(w['Material Expense'].max_column,17)
         self.assertEqual(w['Material Expense']['N2'].value,105)
         w.close()
 
@@ -206,3 +206,22 @@ class ReviewApiTests(unittest.TestCase):
         self.assertEqual(response.status_code,200,response.get_json())
         self.assertEqual(len(self.client.get('/api/modules/cash-controls?month=2026-10').get_json()['rows']),1)
         self.assertEqual(len(self.client.get('/api/modules/cash-vouchers?month=2026-11').get_json()['rows']),0)
+
+    def test_company_personal_payment_split(self):
+        with module.db() as c:
+            c.execute("INSERT OR REPLACE INTO workspace_settings VALUES('workflow','materials_intake_receipt_presence')")
+        body=dict(kind='payment',collection='Material Expense',date='2026-10-23',company='Example supplier',amount=25133.48,transfer_amount=25133.48,personal_amount=1100,personal_note='Personal beneficiary',method='GCash',reference='SPLIT-TEST-001',code='CS-0001')
+        response=self.client.post('/api/record',json=body)
+        self.assertEqual(response.status_code,200,response.get_json())
+        rid=response.get_json()['id']
+        entry=next(r for r in self.client.get('/api/materials/entries').get_json()['rows'] if r['id']==rid)
+        for field in ['amount','settlement_amount','remaining']:self.assertEqual(entry[field],24033.48)
+        self.assertEqual(entry['transfer_amount'],25133.48)
+        self.assertEqual(entry['personal_amount'],1100)
+        october=next(r for r in self.client.get('/api/modules/monthly').get_json()['rows'] if r['period']=='2026-10')
+        self.assertEqual(october['total'],24033.48)
+        self.assertEqual(october['personal'],1100)
+        body.update(id=rid,personal_amount=26000)
+        self.assertEqual(self.client.post('/api/record',json=body).status_code,400)
+        body.update(personal_amount=1100,amount=24033.48)
+        self.assertEqual(self.client.post('/api/record',json=body).status_code,200)
