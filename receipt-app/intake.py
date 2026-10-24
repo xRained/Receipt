@@ -46,6 +46,9 @@ def extract(text, mode='auto', suppliers=(), history=()):
                 try:draft['date']=datetime.strptime(match.group(1).replace(',',''),fmt).date().isoformat();break
                 except ValueError:pass
     find('company',[r'(?:sent\s+to|paid\s+to|recipient|payee|company)\s*[:\n]\s*([^\n]+)'])
+    find('business_name',[r'^(?:company\s*/\s*trading\s+name|trading\s+name|business\s+name)\s*:\s*([^\n]+)'])
+    owner=re.search(r'^([^\n]+?\s*-\s*Prop(?:rietor)?\.?)\s*$',text,re.I|re.M)
+    if owner and draft.get('business_name'):draft['company']=owner.group(1).strip()
     candidates=[]
     for supplier in suppliers:
         name=norm(supplier['name'])
@@ -53,10 +56,10 @@ def extract(text, mode='auto', suppliers=(), history=()):
     by_name={norm(s['name']):s for s in candidates}
     if len(by_name)==1:
         supplier=next(iter(by_name.values()))
-        draft.update(company=supplier['name'],tin=draft['tin'] or supplier.get('tin',''),address=supplier.get('address',''))
+        draft.update(company=supplier['name'],tin=draft['tin'] or supplier.get('tin',''),address=supplier.get('address',''),business_name=supplier.get('business_name',''),proprietor=supplier.get('proprietor',''))
     elif draft['company']:
         supplier=next((s for s in suppliers if norm(s['name'])==norm(draft['company'])),None)
-        if supplier:draft.update(tin=draft['tin'] or supplier.get('tin',''),address=supplier.get('address',''))
+        if supplier:draft.update(tin=draft['tin'] or supplier.get('tin',''),address=supplier.get('address',''),business_name=supplier.get('business_name',''),proprietor=supplier.get('proprietor',''))
     codes={r['code'] for r in history if r.get('code') and draft['company'] and same_supplier(draft,r)}
     if len(codes)==1:
         draft['code']=next(iter(codes))

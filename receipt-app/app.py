@@ -10,7 +10,7 @@ from pathlib import Path
 from difflib import SequenceMatcher
 from contextlib import contextmanager
 
-from supplier_profiles import suppliers as supplier_rows, annotate
+from supplier_profiles import suppliers as supplier_rows, annotate, remember_from_record
 import openpyxl
 from matching import plan_matches, review_matches, identity
 from workbooks import audit, normalized_receipts, account_entries
@@ -109,6 +109,8 @@ def auto_match():
             c.execute('INSERT INTO allocations VALUES(?,?,?) ON CONFLICT(payment,receipt) DO UPDATE SET cents=cents+excluded.cents', (a['payment'],a['receipt'],a['cents']))
             c.execute('INSERT OR REPLACE INTO match_audit(payment,receipt,reason) VALUES(?,?,?)', (a['payment'],a['receipt'],a['reason']))
     return {'links': len(planned), 'payments':len({a['payment'] for a in planned}), 'amount':sum(a['cents'] for a in planned)/100}
+
+app.auto_allocate=auto_match
 
 @app.post('/api/auto-match')
 def run_matching():
@@ -332,6 +334,8 @@ def save():
         refunded=c.execute('SELECT COALESCE(SUM(cents),0) FROM returns WHERE payment=?',(rid,)).fetchone()[0]
         if cents(body['settlement_amount']) < allocated+refunded:
             return jsonify(error='Net amount is below the confirmed allocations'), 400
+        try:remember_from_record(c,body)
+        except ValueError as e:return jsonify(error=str(e)),400
         if old: c.execute('UPDATE records SET body=? WHERE id=?', (json.dumps(body),rid))
         else: c.execute('INSERT INTO records VALUES(?,?,?,?,?)', (rid,b['kind'],json.dumps(body),'Manual / image review',None))
         if b.get('image'):c.execute('UPDATE documents SET record_id=? WHERE image=? AND (record_id IS NULL OR record_id=?)',(rid,b['image'],rid))

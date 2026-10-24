@@ -36,3 +36,8 @@ class PaymentExtractionTests(unittest.TestCase):
     def test_total_amount_sent_with_ocr_dollar_symbol(self):
         draft,_=extract('Sent via GCash\nTotal Amount Sent $25,133.48\nRef No. 1234 567 890123', 'payment')
         self.assertEqual(draft['amount'],'25133.48')
+
+    def test_explicit_trading_name_and_proprietor_text(self):
+        draft,_=extract('Business Name: Example New Hardware\nExample New Owner - Prop.\nTotal Amount: 444.00', 'receipt')
+        self.assertEqual(draft['company'],'Example New Owner - Prop.')
+        self.assertEqual(draft['business_name'],'Example New Hardware')

@@ -300,3 +300,17 @@ class ReviewApiTests(unittest.TestCase):
         self.assertEqual(saved[0]['proprietor'],'Example Owner')
         parsed=self.client.post('/api/materials/parse',json=dict(text='Example Hardware\nAmount 333.00',mode='payment',month='2026-09')).get_json()['draft']
         self.assertEqual(parsed['company'],'Example Owner - Prop.')
+
+    def test_record_save_learns_explicit_proprietor_and_links(self):
+        with module.db() as c:
+            c.execute("INSERT OR REPLACE INTO workspace_settings VALUES('workflow','materials_intake_receipt_presence')")
+            body=dict(company='Example New Hardware',amount=444,collection='Material Expense',date='2026-09-01',method='Bank')
+            c.execute('INSERT INTO records VALUES(?,?,?,?,?)',('learnp','payment',json.dumps(body),'Example',None))
+        response=self.client.post('/api/record',json=dict(kind='receipt',company='Example New Owner - Prop.',business_name='Example New Hardware',amount=444,collection='Cash Voucher',receipt_month='2026-09',receipt_no='SI-LEARN-1',code='CS-0001'))
+        self.assertEqual(response.status_code,200,response.get_json())
+        self.assertEqual(response.get_json()['matching']['links'],1)
+        with module.db() as c:
+            mapping=c.execute("SELECT * FROM supplier_profiles WHERE name='Example New Owner - Prop.'").fetchone()
+            self.assertEqual(mapping['business_name'],'Example New Hardware')
+        response=self.client.post('/api/materials/enrich',json={'company':'Example New Hardware'})
+        self.assertEqual(response.get_json()['fields']['company'],'Example New Owner - Prop.')
