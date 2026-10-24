@@ -1,4 +1,5 @@
 """Working modules corresponding to all fourteen original workbook sheets."""
+from supplier_profiles import suppliers as supplier_rows
 import json
 import re
 from collections import defaultdict
@@ -72,7 +73,7 @@ def install(app,db,records,cents):
             scope=c.execute("SELECT value FROM workspace_settings WHERE key='scope_month'").fetchone()
             scope=scope['value'] if scope else None
             rs=records(c)
-            if kind=='suppliers':rows=[dict(r) for r in c.execute('SELECT * FROM suppliers ORDER BY name')]
+            if kind=='suppliers':rows=supplier_rows(c)
             elif kind=='accounts':rows=[dict(r) for r in c.execute('SELECT * FROM accounts ORDER BY code')]
             elif kind=='controls':rows=[dict(r) for r in c.execute('SELECT * FROM controls ORDER BY day')]
             elif kind=='payment':rows=[r for r in rs if r['kind']=='payment' and collection(r)==name]
@@ -132,6 +133,9 @@ def install(app,db,records,cents):
             if any(norm(r['name'])==norm(name) for r in others):return jsonify(error='This supplier already exists; edit the existing master'),409
             if original:c.execute('DELETE FROM suppliers WHERE name=?',(original,))
             c.execute('INSERT INTO suppliers VALUES(?,?,?)',(name,str(b.get('tin','')).strip(),str(b.get('address','')).strip()))
+            if original and original!=name:c.execute('UPDATE supplier_profiles SET name=? WHERE name=?',(name,original))
+            if 'business_name' in b or 'proprietor' in b:
+                c.execute('INSERT INTO supplier_profiles VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET business_name=excluded.business_name,proprietor=excluded.proprietor',(name,str(b.get('business_name','')).strip(),str(b.get('proprietor','')).strip()))
         return jsonify(ok=True)
 
     @app.post('/api/master/account')

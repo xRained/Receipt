@@ -283,3 +283,20 @@ class ReviewApiTests(unittest.TestCase):
         module.app.refresh_material_presence()
         row=next(r for r in self.client.get('/api/materials-presence').get_json()['rows'] if r['payment']['id']=='ambp')
         self.assertEqual(row['status'],'review')
+
+    def test_proprietor_company_mapping_is_remembered(self):
+        response=self.client.post('/api/master/supplier',json=dict(name='Example Owner - Prop.',business_name='Example Hardware',proprietor='Example Owner',tin='111-222-333',address='Example address'))
+        self.assertEqual(response.status_code,200,response.get_json())
+        enriched=self.client.post('/api/materials/enrich',json=dict(company='Example Hardware')).get_json()['fields']
+        self.assertEqual(enriched['company'],'Example Owner - Prop.')
+        self.assertEqual(enriched['business_name'],'Example Hardware')
+        self.assertEqual(enriched['proprietor'],'Example Owner')
+        with module.db() as c:
+            for rid,kind,company in [('ownerp','payment','Example Hardware'),('ownerr','receipt','Example Owner - Prop.')]:
+                body=dict(company=company,amount=333,collection='Material Expense' if kind=='payment' else 'Cash Voucher',receipt_no='' if kind=='payment' else 'SI-OWNER-1',code='CS-0001',receipt_month='2026-09')
+                c.execute('INSERT INTO records VALUES(?,?,?,?,?)',(rid,kind,json.dumps(body),'Example',None))
+        self.assertEqual(module.auto_match()['links'],1)
+        saved=self.client.get('/api/modules/suppliers?q=example%20hardware').get_json()['rows']
+        self.assertEqual(saved[0]['proprietor'],'Example Owner')
+        parsed=self.client.post('/api/materials/parse',json=dict(text='Example Hardware\nAmount 333.00',mode='payment',month='2026-09')).get_json()['draft']
+        self.assertEqual(parsed['company'],'Example Owner - Prop.')

@@ -46,6 +46,8 @@ def same_supplier(a, b, aliases=()):
     at, bt = tin(a.get('tin')), tin(b.get('tin'))
     if at and bt:
         return at == bt
+    business_a,business_b=norm(a.get('business_name')),norm(b.get('business_name'))
+    if business_a and business_a==business_b:return True
     an, bn = norm(a.get('company')), norm(b.get('company'))
     return bool(an and an == bn)
 

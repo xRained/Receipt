@@ -10,6 +10,7 @@ from pathlib import Path
 from difflib import SequenceMatcher
 from contextlib import contextmanager
 
+from supplier_profiles import suppliers as supplier_rows, annotate
 import openpyxl
 from matching import plan_matches, review_matches, identity
 from workbooks import audit, normalized_receipts, account_entries
@@ -48,6 +49,7 @@ with db() as c:
     c.executescript('''
     CREATE TABLE IF NOT EXISTS records(id TEXT PRIMARY KEY, kind TEXT NOT NULL, body TEXT NOT NULL, source TEXT, source_row INTEGER, UNIQUE(source, source_row));
     CREATE TABLE IF NOT EXISTS allocations(payment TEXT REFERENCES records(id), receipt TEXT REFERENCES records(id), cents INTEGER CHECK(cents>0), PRIMARY KEY(payment,receipt));
+    CREATE TABLE IF NOT EXISTS supplier_profiles(name TEXT PRIMARY KEY,business_name TEXT NOT NULL DEFAULT '',proprietor TEXT NOT NULL DEFAULT '');
     CREATE TABLE IF NOT EXISTS suppliers(name TEXT PRIMARY KEY, tin TEXT, address TEXT);
     CREATE TABLE IF NOT EXISTS accounts(code TEXT PRIMARY KEY, title TEXT);
     CREATE TABLE IF NOT EXISTS match_audit(payment TEXT, receipt TEXT, reason TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(payment,receipt));
@@ -93,7 +95,7 @@ def records(c):
     by_id = {r['id']:r for r in result}
     for b in result:
         b['linked_receipt_numbers'] = ', '.join(dict.fromkeys(by_id[rid].get('receipt_no') or '(no receipt number)' for rid in linked.get(b['id'],[])))
-    return result
+    return annotate(result,c)
 
 def auto_match():
     with db() as c:
@@ -248,7 +250,7 @@ def health():return jsonify(app='tally-local',workspace=str(ROOT.resolve()),pid=
 def state():
     with db() as c:
         scope=c.execute("SELECT value FROM workspace_settings WHERE key='scope_month'").fetchone()
-        return jsonify(scope_month=scope['value'] if scope else None,records=records(c), suppliers=[dict(r) for r in c.execute('SELECT * FROM suppliers ORDER BY name')], accounts=[dict(r) for r in c.execute('SELECT * FROM accounts ORDER BY code')], allocations=[dict(r) for r in c.execute('SELECT a.*, m.reason FROM allocations a LEFT JOIN match_audit m ON a.payment=m.payment AND a.receipt=m.receipt')])
+        return jsonify(scope_month=scope['value'] if scope else None,records=records(c), suppliers=supplier_rows(c), accounts=[dict(r) for r in c.execute('SELECT * FROM accounts ORDER BY code')], allocations=[dict(r) for r in c.execute('SELECT a.*, m.reason FROM allocations a LEFT JOIN match_audit m ON a.payment=m.payment AND a.receipt=m.receipt')])
 
 @app.post('/api/record')
 def save():

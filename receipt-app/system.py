@@ -1,4 +1,5 @@
 """End-to-end local document intake, month closing, controls and backups."""
+from supplier_profiles import suppliers as supplier_rows
 import csv
 import hashlib
 import io
@@ -65,7 +66,7 @@ def install(app, get_data, db, records, cents, auto_match):
     def parse():
         b=request.get_json() or {}
         with db() as c:
-            rs=records(c);suppliers=[dict(r) for r in c.execute('SELECT * FROM suppliers')]
+            rs=records(c);suppliers=supplier_rows(c)
             try:draft,warnings=extract(b.get('text',''),b.get('mode','auto'),suppliers,rs)
             except ValueError as e:return jsonify(error=str(e)),400
             if b.get('image'):
@@ -181,7 +182,7 @@ def install(app, get_data, db, records, cents, auto_match):
             scope=scoped['value'] if scoped else None
             if c.execute("SELECT 1 FROM workspace_settings WHERE key='workflow' AND value='materials_intake_receipt_presence'").fetchone():scope=None
             if scope and month!=scope:return jsonify(error='Export the active workspace month: '+scope),400
-            rs=records(c);suppliers=[dict(r) for r in c.execute('SELECT * FROM suppliers ORDER BY name')];accounts=[dict(r) for r in c.execute('SELECT * FROM accounts ORDER BY code')]
+            rs=records(c);suppliers=supplier_rows(c);accounts=[dict(r) for r in c.execute('SELECT * FROM accounts ORDER BY code')]
             controls=[dict(r) for r in c.execute('SELECT * FROM controls ORDER BY day')]
             for r in controls:r.update(date=r['day'],amount=r['amount']/100)
         if {r['kind'] for r in templates}!={'quarterly','monthly'}:return jsonify(error='Import both the quarterly and monthly workbook templates first'),400

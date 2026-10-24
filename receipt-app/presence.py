@@ -6,7 +6,7 @@ import io
 from difflib import SequenceMatcher
 from flask import jsonify,request,send_file
 import openpyxl
-from matching import norm,receipt_numbers,tin
+from matching import norm,receipt_numbers,tin,same_supplier
 from materials import material_payment,cash_voucher
 
 
@@ -15,7 +15,7 @@ def online_material(row):
 
 
 def same_identity(p,r):
-    return bool((tin(p.get('tin')) and tin(p.get('tin'))==tin(r.get('tin'))) or (norm(p.get('company')) and norm(p.get('company'))==norm(r.get('company'))))
+    return same_supplier(p,r)
 
 
 def compare(payments,vouchers,account='CS-0001',confirmed=(),dismissed=()):

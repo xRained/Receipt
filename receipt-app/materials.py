@@ -1,4 +1,5 @@
 """Material Expense entry, shared reference data and monthly voucher intake."""
+from supplier_profiles import suppliers as supplier_rows
 import io
 import json
 import re
@@ -125,7 +126,7 @@ def install(app,get_data,db,records,cents):
                     if pair in blocked or any(pid==p['id'] or rid==r['id'] for pid,rid in manual):continue
                     pt,rt=tin(p.get('tin')),tin(r.get('tin'))
                     if pt and rt and pt!=rt:continue
-                    same=bool((pt and pt==rt) or (norm(p['company']) and norm(p['company'])==norm(r['company'])))
+                    same=bool((pt and pt==rt) or (norm(p['company']) and norm(p['company'])==norm(r['company'])) or (norm(p.get('business_name')) and norm(p.get('business_name'))==norm(r.get('business_name'))))
                     amount_same=cents(p['amount']) in {cents(r['amount']),cents(r.get('settlement_amount',r['amount']))}
                     pn,rn=receipt_numbers(p),receipt_numbers(r)
                     if pn and rn and pn.isdisjoint(rn):continue
@@ -185,7 +186,7 @@ def install(app,get_data,db,records,cents):
             rs=records(c);scope=c.execute("SELECT value FROM workspace_settings WHERE key='scope_month'").fetchone()
             return jsonify(modes=PAYMENT_MODES,month=scope['value'] if scope else '2026-09',
                            months=sorted({r.get('receipt_month') for r in rs if cash_voucher(r) and r.get('receipt_month')}),
-                           suppliers=[dict(r) for r in c.execute('SELECT * FROM suppliers ORDER BY name')],
+                           suppliers=supplier_rows(c),
                            accounts=[dict(r) for r in c.execute('SELECT * FROM accounts ORDER BY code')],read_only=app.config.get('HOSTED_PREVIEW',False))
 
     @app.get('/api/materials/entries')
@@ -202,11 +203,11 @@ def install(app,get_data,db,records,cents):
     def enrich():
         b=request.get_json() or {}
         with db() as c:
-            suppliers=[dict(r) for r in c.execute('SELECT * FROM suppliers')]
-            matched=[s for s in suppliers if norm(s['name'])==norm(b.get('company'))]
+            suppliers=supplier_rows(c)
+            matched=[s for s in suppliers if norm(b.get('company')) in {norm(s['name']),norm(s.get('business_name'))}]
             if not matched and tin(b.get('tin')):matched=[s for s in suppliers if tin(s['tin'])==tin(b['tin'])]
             fields={}
-            if len(matched)==1:fields.update(company=matched[0]['name'],tin=matched[0]['tin'],address=matched[0]['address'])
+            if len(matched)==1:fields.update(company=matched[0]['name'],tin=matched[0]['tin'],address=matched[0]['address'],business_name=matched[0]['business_name'],proprietor=matched[0]['proprietor'])
             code=b.get('code') or 'CS-0001';account=c.execute('SELECT title FROM accounts WHERE code=?',(code,)).fetchone()
             if account:fields.update(code=code,account=account['title'])
         return jsonify(fields=fields,ambiguous=len(matched)>1)
@@ -218,7 +219,7 @@ def install(app,get_data,db,records,cents):
         try:month=month_value(b.get('month','2026-09'))
         except ValueError as e:return jsonify(error=str(e)),400
         with db() as c:
-            rs=records(c);suppliers=[dict(r) for r in c.execute('SELECT * FROM suppliers')]
+            rs=records(c);suppliers=supplier_rows(c)
             draft,warnings=extract(b.get('text',''),mode,suppliers,rs)
             # This form is specifically the Material Expense input, so Materials
             # is a module default rather than an inferred tax/accounting choice.
