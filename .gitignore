@@ -1,0 +1,13 @@
+**/data/
+**/__pycache__/
+**/.env
+**/.env.*
+**/.venv/
+**/venv/
+**/.vercel/
+*.xlsx
+*.xls
+*.sqlite*
+*.db
+*.zip
+*.log

@@ -1,0 +1,17 @@
+data/
+__pycache__/
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+.vercel/
+.pytest_cache/
+*.pyc
+*.sqlite*
+*.db
+*.xlsx
+*.xls
+*.zip
+*.log
+EXCEL_WORKFLOW_AUDIT.md

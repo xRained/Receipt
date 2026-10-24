@@ -1,0 +1,103 @@
+"""Working modules corresponding to all fourteen original workbook sheets."""
+import json
+import re
+from collections import defaultdict
+from flask import jsonify, request
+from matching import norm
+from reports import collection, money
+
+
+DEFINITIONS={
+ 'materials':('Material Expense','quarterly','payment'),
+ 'costs':('Cost of Sales Expense','quarterly','payment'),
+ 'operating':('Operating Expense','quarterly','payment'),
+ 'allowances':('COS_Allowance','quarterly','payment'),
+ 'cash-controls':('GCashCheck','quarterly','controls'),
+ 'daily':('Expense Summary','quarterly','daily'),
+ 'monthly':('SummaryMonth','quarterly','monthly'),
+ 'supplier-list':('Suppliers List','quarterly','suppliers'),
+ 'account-list':('Copy of Accounts','quarterly','accounts'),
+ 'cash-vouchers':('September Cash Voucher','monthly','receipt'),
+ 'cheque-vouchers':('September Check Voucher','monthly','receipt'),
+ 'non-receipt':('Non Receipt','monthly','receipt'),
+ 'suppliers':('Suppliers','monthly','suppliers'),
+ 'coa':('COA','monthly','accounts'),
+}
+
+
+def install(app,db,records,cents):
+    @app.get('/api/modules')
+    def module_list():
+        return jsonify(modules=[dict(id=k,name=v[0],workbook=v[1],type=v[2]) for k,v in DEFINITIONS.items()])
+
+    @app.get('/api/modules/<slug>')
+    def module_data(slug):
+        if slug not in DEFINITIONS:return jsonify(error='Unknown module'),404
+        name,workbook,kind=DEFINITIONS[slug]
+        month=request.args.get('month','')
+        with db() as c:
+            scope=c.execute("SELECT value FROM workspace_settings WHERE key='scope_month'").fetchone()
+            scope=scope['value'] if scope else None
+            rs=records(c)
+            if kind=='suppliers':rows=[dict(r) for r in c.execute('SELECT * FROM suppliers ORDER BY name')]
+            elif kind=='accounts':rows=[dict(r) for r in c.execute('SELECT * FROM accounts ORDER BY code')]
+            elif kind=='controls':rows=[dict(r) for r in c.execute('SELECT * FROM controls ORDER BY day')]
+            elif kind=='payment':rows=[r for r in rs if r['kind']=='payment' and collection(r)==name]
+            elif kind=='receipt':
+                rows=[r for r in rs if r['kind']=='receipt' and ((r.get('collection')=='Non Receipt' or r.get('treatment')=='no_receipt') if slug=='non-receipt' else (r.get('collection')!='Non Receipt' and r.get('treatment')!='no_receipt' and (r.get('collection')=='September Check Voucher' or r.get('method','').lower() in ['cheque','check'])==(slug=='cheque-vouchers')))]
+            else:
+                groups=defaultdict(lambda:dict(materials=0,costs=0,operating=0,allowances=0,principal=0,fees=0,total=0,cash=0,gcash=0,cheque=0,bank=0,personal=0))
+                for r in rs:
+                    if r['kind']!='payment':continue
+                    key=r.get('date','') or 'Date missing'
+                    if kind=='monthly' and key!='Date missing':key=key[:7]
+                    g=groups[key];principal=cents(r['amount']);fee=cents(r.get('fee'));total=principal+fee
+                    if r.get('personal') or r.get('treatment')=='personal':g['personal']+=total;continue
+                    category=next(k for k in ['materials','costs','operating','allowances'] if DEFINITIONS[k][0]==collection(r))
+                    g[category]+=total;g['principal']+=principal;g['fees']+=fee;g['total']+=total
+                    method=r.get('method','').lower();g['gcash' if method=='gcash' else 'cash' if method=='cash' else 'cheque' if method in ['cheque','check'] else 'bank']+=total
+                rows=[dict(period=key,**{k:v/100 for k,v in g.items()},basis='Payment detail; control totals not added') for key,g in sorted(groups.items())]
+                if kind=='monthly' and not scope:
+                    import calendar
+                    template=c.execute("SELECT snapshot FROM templates WHERE kind='quarterly'").fetchone()
+                    if template:
+                        snapshot=json.loads(template['snapshot'])
+                        for sheet in snapshot['sheets']:
+                            if sheet['name']!='SummaryMonth':continue
+                            for source in sheet['rows']:
+                                v=source['values'];label=v.get('A')
+                                if label not in list(calendar.month_name)[1:]:continue
+                                year='2026'
+                                period=f'{year}-{list(calendar.month_name).index(label):02d}'
+                                if period in groups:continue
+                                mapping={'materials':'B','costs':'C','operating':'D','allowances':'E','cash':'F','cheque':'G','gcash':'H','total':'I'}
+                                historic={k:money(v.get(col)) if isinstance(v.get(col),(int,float)) else 0 for k,col in mapping.items()}
+                                rows.append(dict(period=period,**historic,bank=None,personal=None,basis='Historical source snapshot; supporting detail not supplied'))
+                        rows.sort(key=lambda r:r['period'])
+        if month and kind in ['payment','receipt','controls','daily']:
+            rows=[r for r in rows if (r.get('receipt_month')==month if kind=='receipt' else str(r.get('date',r.get('day',r.get('period','')))).startswith(month))]
+        return jsonify(name=name,workbook=workbook,type=kind,rows=rows,
+                       note='Supplier and COA modules share one master across both workbooks. Historical transaction details are preserved when a master is edited. Summaries derive from payment detail; cash-control figures are separate evidence.')
+
+    @app.post('/api/master/supplier')
+    def save_supplier():
+        b=request.get_json() or {};name=str(b.get('name','')).strip();original=str(b.get('original','')).strip()
+        if not name:return jsonify(error='Supplier name is required'),400
+        with db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            if original and not c.execute('SELECT 1 FROM suppliers WHERE name=?',(original,)).fetchone():return jsonify(error='Supplier no longer exists'),409
+            others=c.execute('SELECT name FROM suppliers WHERE name<>?',(original,)).fetchall()
+            if any(norm(r['name'])==norm(name) for r in others):return jsonify(error='This supplier already exists; edit the existing master'),409
+            if original:c.execute('DELETE FROM suppliers WHERE name=?',(original,))
+            c.execute('INSERT INTO suppliers VALUES(?,?,?)',(name,str(b.get('tin','')).strip(),str(b.get('address','')).strip()))
+        return jsonify(ok=True)
+
+    @app.post('/api/master/account')
+    def save_account():
+        b=request.get_json() or {};code=str(b.get('code','')).strip().upper();title=str(b.get('title','')).strip()
+        if not re.fullmatch(r'[A-Z]+-\d{4}',code) or not title:return jsonify(error='Enter an account code such as CS-0001 and an account title'),400
+        with db() as c:
+            exists=c.execute('SELECT 1 FROM accounts WHERE code=?',(code,)).fetchone()
+            if exists and not b.get('editing'):return jsonify(error='Account code already exists; edit it instead'),409
+            c.execute('INSERT INTO accounts VALUES(?,?) ON CONFLICT(code) DO UPDATE SET title=excluded.title',(code,title))
+        return jsonify(ok=True)
