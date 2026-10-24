@@ -22,6 +22,9 @@ ROOT = Path(__file__).parent
 HOSTED_PREVIEW = os.environ.get('VERCEL') == '1'
 DATA = Path(os.environ.get('RECEIPT_DATA_DIR', '/tmp/jolyn-tae' if HOSTED_PREVIEW else str(ROOT / 'data')))
 DATA.mkdir(parents=True,exist_ok=True)
+if not HOSTED_PREVIEW:
+    from bootstrap import restore_initial_data
+    restore_initial_data(ROOT,DATA)
 (DATA / 'uploads').mkdir(exist_ok=True)
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 30 * 1024 * 1024
