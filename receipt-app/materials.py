@@ -43,6 +43,7 @@ def workbook_rows(snapshot,kind,month):
         header=next((r for r in s['rows'] if 'DATE' in r['values'].values() and ('PAYEE' in r['values'].values() or 'PARTICULARS' in r['values'].values())),None)
         if not header:continue
         cols={v:k for k,v in header['values'].items() if isinstance(v,str)}
+        previous_day='';date_source_row=None
         for row in s['rows']:
             if row['row']<=header['row']:continue
             v=row['values']
@@ -50,13 +51,16 @@ def workbook_rows(snapshot,kind,month):
             amount=get('AMOUNT');company=str(get('PAYEE','PARTICULARS')).strip()
             if not company or not isinstance(amount,(int,float)) or amount<=0:continue
             day=get('DATE')
+            inherited=not bool(day) and kind=='vouchers' and bool(previous_day)
+            if day:previous_day=day;date_source_row=row['row']
+            elif kind=='vouchers':day=previous_day
             day=from_excel(day).date().isoformat() if isinstance(day,(int,float)) else str(day or '')
             if kind=='payments' and month and not day.startswith(month):continue
             body=dict(date=day,company=company,amount=amount,fee=get('FEES') or 0,method=get('MODE OF PAYMENT') or 'Cash',
                       receipt_no=str(get('RECEIPT NO.','S.I#')),reference=str(get('REF. NO','REFERENCE NO.')),
                       tin=str(get('TIN')),address=str(get('ADDRESS')),project=str(get('PROJECT')),
                       code=str(get('ACCOUNT CODE','CODE')),account=str(get('ACCOUNT TITLE','ACCOUNT')),
-                      remarks=str(get('DESCRIPTION')),collection=s['name'],treatment='business',
+                      remarks=str(get('DESCRIPTION')),collection=s['name'],treatment='business',date_inherited=inherited,date_source_row=date_source_row,
                       receipt_month=month if kind=='vouchers' else '',settlement_amount=amount)
             source=snapshot['file']+' / '+s['name']
             if kind=='vouchers':
@@ -66,16 +70,49 @@ def workbook_rows(snapshot,kind,month):
     return output
 
 
+def restore_shared_dates(data,db):
+    """Recover blank transaction dates from retained workbook audit snapshots."""
+    snapshots=[]
+    for name in ['workbook-audit.json','september-additional-audit.json']:
+        path=data/name
+        if not path.exists():continue
+        try:
+            value=json.loads(path.read_text(encoding='utf-8'))
+            snapshots.extend(value if isinstance(value,list) else [value])
+        except (ValueError,OSError):continue
+    lookup={}
+    for snapshot in snapshots:
+        for row in workbook_rows(snapshot,'vouchers',''):
+            if row['body'].get('date_inherited'):lookup[(row['source'],row['source_row'])]=row['body']
+    with db() as c:
+        c.execute('BEGIN IMMEDIATE')
+        updates=[]
+        for row in c.execute("SELECT * FROM records WHERE kind='receipt'"):
+            body=json.loads(row['body'])
+            source=re.sub(r' \[\d{4}-\d{2}\]$','',row['source'] or '')
+            original=lookup.get((source,row['source_row']))
+            if not body.get('date') and original and original.get('date'):
+                body.update({k:original[k] for k in ['date','date_inherited','date_source_row']})
+                updates.append((json.dumps(body),row['id']))
+        if updates:
+            import sqlite3
+            from datetime import datetime
+            backup=data/('before-shared-date-repair-'+datetime.now().strftime('%Y%m%d-%H%M%S-%f')+'.sqlite3')
+            with sqlite3.connect(data/'receipts.sqlite3') as source,sqlite3.connect(backup) as target:source.backup(target)
+            c.executemany('UPDATE records SET body=? WHERE id=?',updates)
+    return len(updates)
+
+
 def install(app,get_data,db,records,cents):
     def refresh_matches():
         with db() as c:
             c.execute('BEGIN IMMEDIATE')
             c.execute("DELETE FROM presence_links WHERE match_kind='automatic'")
-            allrows=records(c);ps=[r for r in allrows if material_payment(r) and not receipt_numbers(r)]
+            allrows=records(c);ps=[r for r in allrows if material_payment(r)]
             rs=[r for r in allrows if cash_voucher(r) and receipt_numbers(r)]
             blocked={tuple(r) for r in c.execute('SELECT payment,receipt FROM presence_dismissals')}
             manual={tuple(r) for r in c.execute('SELECT payment,receipt FROM presence_links')}
-            candidates=[]
+            candidates=[];exact_pairs=[]
             for p in ps:
                 for r in rs:
                     pair=(p['id'],r['id'])
@@ -83,10 +120,14 @@ def install(app,get_data,db,records,cents):
                     pt,rt=tin(p.get('tin')),tin(r.get('tin'))
                     if pt and rt and pt!=rt:continue
                     same=bool((pt and pt==rt) or (norm(p['company']) and norm(p['company'])==norm(r['company'])))
+                    if receipt_numbers(p):
+                        if same and receipt_numbers(p)&receipt_numbers(r):exact_pairs.append(pair)
+                        continue
                     if same and cents(p['amount']) in {cents(r['amount']),cents(r.get('settlement_amount',r['amount']))}:candidates.append(pair)
             from collections import Counter
             pc=Counter(p for p,r in candidates);rc=Counter(r for p,r in candidates)
-            accepted=[(p,r) for p,r in candidates if pc[p]==1 and rc[r]==1]
+            ec=Counter(p for p,r in exact_pairs)
+            accepted=[(p,r) for p,r in exact_pairs if ec[p]==1]+[(p,r) for p,r in candidates if pc[p]==1 and rc[r]==1]
             c.executemany("INSERT INTO presence_links(payment,receipt,match_kind) VALUES(?,?,'automatic')",accepted)
         return len(accepted)
     app.refresh_material_presence=refresh_matches
@@ -129,6 +170,9 @@ def install(app,get_data,db,records,cents):
         matched=refresh_matches()
         return dict(imported=imported,skipped=skipped,conflicts=conflicts,supplier_rows=suppliers,account_rows=len(ac),automatic_receipt_links=matched)
     app.import_material_snapshot=save_snapshot
+
+    restore_shared_dates(get_data(),db)
+    refresh_matches()
 
     @app.get('/api/materials/config')
     def config():

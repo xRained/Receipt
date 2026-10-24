@@ -225,3 +225,17 @@ class ReviewApiTests(unittest.TestCase):
         self.assertEqual(self.client.post('/api/record',json=body).status_code,400)
         body.update(personal_amount=1100,amount=24033.48)
         self.assertEqual(self.client.post('/api/record',json=body).status_code,200)
+
+    def test_exact_supplier_si_auto_confirmation_allows_shared_receipt(self):
+        with module.db() as c:
+            c.execute("INSERT OR REPLACE INTO workspace_settings VALUES('workflow','materials_intake_receipt_presence')")
+            for rid,kind,amount in [('exact1','payment',100),('exact2','payment',200),('exactr','receipt',300)]:
+                body=dict(company='Example supplier',amount=amount,receipt_no='SI-987',collection='Material Expense' if kind=='payment' else 'Cash Voucher',code='CS-0001',date='2026-09-01',receipt_month='2026-09')
+                c.execute('INSERT INTO records VALUES(?,?,?,?,?)',(rid,kind,json.dumps(body),'Example',None))
+        module.app.refresh_material_presence()
+        rows=self.client.get('/api/materials-presence?month=2026-09').get_json()['rows']
+        for row in rows:
+            if row['payment']['id'] in ['exact1','exact2']:
+                self.assertEqual(row['status'],'found')
+                self.assertTrue(next(c for c in row['candidates'] if c['receipt']['id']=='exactr')['automatic'])
+        with module.db() as c:self.assertEqual(c.execute('SELECT COUNT(*) FROM allocations').fetchone()[0],0)

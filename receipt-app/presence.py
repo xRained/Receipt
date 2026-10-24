@@ -76,7 +76,7 @@ def install(app,db,records):
                 if (row['payment']['id'],candidate['receipt']['id']) in automatic:
                     candidate['confirmed']=False;candidate['automatic']=True
                     candidate['reasons']=[reason for reason in candidate['reasons'] if reason!='Manually confirmed same receipt']
-                    candidate['reasons'].insert(0,'Automatically linked: unique supplier/TIN and exact amount match')
+                    candidate['reasons'].insert(0,'Automatically confirmed: matching S.I.# and supplier/TIN, or unique supplier/TIN and exact amount')
         choices=sorted({(r.get('code',''),r.get('account','')) for r in rs},key=lambda a:a[1])
         if not any(code=='CS-0001' for code,title in choices):choices.insert(0,('CS-0001','Materials'))
         return dict(rows=rows,vouchers=selected,accounts=[dict(code=k,title=v) for k,v in choices],
