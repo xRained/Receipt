@@ -322,3 +322,18 @@ class ReviewApiTests(unittest.TestCase):
             self.assertGreaterEqual(learn_from_supplier_tins(c),1)
             row=c.execute("SELECT business_name FROM supplier_profiles WHERE name='Example Tax Owner - Prop.'").fetchone()
             self.assertEqual(row['business_name'],'Example Tax Hardware')
+
+    def test_existing_confirmed_si_teaches_payee_alias_and_allocates_other_receipts(self):
+        with module.db() as c:
+            for rid,kind,name,amount,si in [('historyp','payment','Example Electrical',100,'OLD-101'),('historyr','receipt','Example Owner - Prop.',100,'OLD-101'),('newp','payment','Example Electrical',200,''),('newr','receipt','Example Owner - Prop.',200,'NEW-202')]:
+                body=dict(company=name,amount=amount,collection='Material Expense' if kind=='payment' else 'Cash Voucher',receipt_no=si,code='CS-0001',receipt_month='2026-09')
+                c.execute('INSERT INTO records VALUES(?,?,?,?,?)',(rid,kind,json.dumps(body),'Example',None))
+            c.execute('INSERT INTO allocations VALUES(?,?,?)',('historyp','historyr',10000))
+        result=module.auto_match()
+        with module.db() as c:
+            self.assertEqual(c.execute("SELECT cents FROM allocations WHERE payment='newp' AND receipt='newr'").fetchone()[0],20000)
+            self.assertEqual(c.execute("SELECT legal_name FROM supplier_name_links WHERE alias='exampleelectrical'").fetchone()[0],'Example Owner - Prop.')
+        closed=self.client.get('/api/materials/entries?status=closed').get_json()['rows']
+        row=next(r for r in closed if r['id']=='newp')
+        self.assertEqual(row['matched_receipt_numbers'],'NEW-202')
+        self.assertFalse(any(r['id']=='newp' for r in self.client.get('/api/materials/entries?status=open').get_json()['rows']))

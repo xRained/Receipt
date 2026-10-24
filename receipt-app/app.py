@@ -10,7 +10,7 @@ from pathlib import Path
 from difflib import SequenceMatcher
 from contextlib import contextmanager
 
-from supplier_profiles import suppliers as supplier_rows, annotate, remember_from_record
+from supplier_profiles import suppliers as supplier_rows, annotate, remember_from_record, learn_from_allocations
 import openpyxl
 from matching import plan_matches, review_matches, identity
 from workbooks import audit, normalized_receipts, account_entries
@@ -49,6 +49,7 @@ with db() as c:
     c.executescript('''
     CREATE TABLE IF NOT EXISTS records(id TEXT PRIMARY KEY, kind TEXT NOT NULL, body TEXT NOT NULL, source TEXT, source_row INTEGER, UNIQUE(source, source_row));
     CREATE TABLE IF NOT EXISTS allocations(payment TEXT REFERENCES records(id), receipt TEXT REFERENCES records(id), cents INTEGER CHECK(cents>0), PRIMARY KEY(payment,receipt));
+    CREATE TABLE IF NOT EXISTS supplier_name_links(alias TEXT PRIMARY KEY,legal_name TEXT NOT NULL,evidence TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS supplier_profiles(name TEXT PRIMARY KEY,business_name TEXT NOT NULL DEFAULT '',proprietor TEXT NOT NULL DEFAULT '');
     CREATE TABLE IF NOT EXISTS suppliers(name TEXT PRIMARY KEY, tin TEXT, address TEXT);
     CREATE TABLE IF NOT EXISTS accounts(code TEXT PRIMARY KEY, title TEXT);
@@ -104,10 +105,15 @@ def auto_match():
         c.execute('BEGIN IMMEDIATE')
         blocked = [tuple(r) for r in c.execute('SELECT payment,receipt FROM match_blocks')]
         aliases = [tuple(r) for r in c.execute('SELECT payment_identity,receipt_identity FROM supplier_aliases')]
-        planned = plan_matches(records(c), blocked, aliases, allow_si_groups=True)
-        for a in planned:
-            c.execute('INSERT INTO allocations VALUES(?,?,?) ON CONFLICT(payment,receipt) DO UPDATE SET cents=cents+excluded.cents', (a['payment'],a['receipt'],a['cents']))
-            c.execute('INSERT OR REPLACE INTO match_audit(payment,receipt,reason) VALUES(?,?,?)', (a['payment'],a['receipt'],a['reason']))
+        learn_from_allocations(c)
+        planned=[]
+        while True:
+            batch=plan_matches(records(c), blocked, aliases, allow_si_groups=True)
+            for a in batch:
+                c.execute('INSERT INTO allocations VALUES(?,?,?) ON CONFLICT(payment,receipt) DO UPDATE SET cents=cents+excluded.cents', (a['payment'],a['receipt'],a['cents']))
+                c.execute('INSERT OR REPLACE INTO match_audit(payment,receipt,reason) VALUES(?,?,?)', (a['payment'],a['receipt'],a['reason']))
+            planned.extend(batch)
+            if not batch or not learn_from_allocations(c):break
     return {'links': len(planned), 'payments':len({a['payment'] for a in planned}), 'amount':sum(a['cents'] for a in planned)/100}
 
 app.auto_allocate=auto_match

@@ -12,7 +12,7 @@ from flask import jsonify,request,send_file
 from audit_workbooks import audit
 from workbooks import normalized_receipts,account_entries
 from intake import extract,duplicates
-from matching import norm,tin
+from matching import norm,tin,same_supplier
 from matching import receipt_numbers
 from openpyxl.utils.datetime import from_excel
 
@@ -126,7 +126,7 @@ def install(app,get_data,db,records,cents):
                     if pair in blocked or any(pid==p['id'] or rid==r['id'] for pid,rid in manual):continue
                     pt,rt=tin(p.get('tin')),tin(r.get('tin'))
                     if pt and rt and pt!=rt:continue
-                    same=bool((pt and pt==rt) or (norm(p['company']) and norm(p['company'])==norm(r['company'])) or (norm(p.get('business_name')) and norm(p.get('business_name'))==norm(r.get('business_name'))))
+                    same=same_supplier(p,r)
                     amount_same=cents(p['amount']) in {cents(r['amount']),cents(r.get('settlement_amount',r['amount']))}
                     pn,rn=receipt_numbers(p),receipt_numbers(r)
                     if pn and rn and pn.isdisjoint(rn):continue
@@ -181,6 +181,7 @@ def install(app,get_data,db,records,cents):
 
     with db() as c:learn_from_supplier_tins(c)
     restore_shared_dates(get_data(),db)
+    if hasattr(app,'auto_allocate'):app.auto_allocate()
     refresh_matches()
 
     @app.get('/api/materials/config')
@@ -198,6 +199,10 @@ def install(app,get_data,db,records,cents):
         with db() as c:
             allrows=records(c);byid={r['id']:r for r in allrows}
             rows=[r for r in allrows if material_payment(r) and (not month or r.get('date','').startswith(month)) and (not method or norm(r.get('method'))==norm(method))]
+            status=request.args.get('status','')
+            if status=='closed':rows=[r for r in rows if r['remaining']<=.005]
+            elif status=='open':rows=[r for r in rows if r['remaining']>.005]
+            elif status=='partial':rows=[r for r in rows if r['allocated']>0 and r['remaining']>.005]
             links=list(c.execute('SELECT payment,receipt FROM presence_links'))
             for r in rows:r['matched_receipt_numbers']=', '.join(dict.fromkeys(byid[link['receipt']].get('receipt_no','') for link in links if link['payment']==r['id'])) or r.get('linked_receipt_numbers','')
         return jsonify(rows=sorted(rows,key=lambda r:r.get('date','')),modes=PAYMENT_MODES)
@@ -208,6 +213,9 @@ def install(app,get_data,db,records,cents):
         with db() as c:
             suppliers=supplier_rows(c)
             matched=[s for s in suppliers if norm(b.get('company')) in {norm(s['name']),norm(s.get('business_name'))}]
+            if not matched:
+                alias=c.execute('SELECT legal_name FROM supplier_name_links WHERE alias=?',(norm(b.get('company')),)).fetchone()
+                if alias:matched=[s for s in suppliers if norm(s['name'])==norm(alias['legal_name'])]
             if not matched and tin(b.get('tin')):matched=[s for s in suppliers if tin(s['tin'])==tin(b['tin'])]
             fields={}
             if len(matched)==1:fields.update(company=matched[0]['name'],tin=matched[0]['tin'],address=matched[0]['address'],business_name=matched[0]['business_name'],proprietor=matched[0]['proprietor'])

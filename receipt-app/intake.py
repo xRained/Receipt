@@ -52,7 +52,7 @@ def extract(text, mode='auto', suppliers=(), history=()):
     candidates=[]
     for supplier in suppliers:
         name=norm(supplier['name'])
-        if (name and len(name)>5 and name in norm(text)) or (norm(supplier.get('business_name')) and norm(supplier.get('business_name')) in norm(text)) or (tin(draft['tin']) and tin(draft['tin'])==tin(supplier.get('tin'))):candidates.append(supplier)
+        if (name and len(name)>5 and name in norm(text)) or (norm(supplier.get('business_name')) and norm(supplier.get('business_name')) in norm(text)) or any(alias and alias in norm(text) for alias in supplier.get('known_payees','').split(', ')) or (tin(draft['tin']) and tin(draft['tin'])==tin(supplier.get('tin'))):candidates.append(supplier)
     by_name={norm(s['name']):s for s in candidates}
     if len(by_name)==1:
         supplier=next(iter(by_name.values()))
