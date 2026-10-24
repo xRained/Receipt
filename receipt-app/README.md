@@ -1,3 +1,5 @@
+The workspace uses the supplied company logo and a lavender theme. Live updates check a lightweight database revision every four seconds while the tab is visible. Changed records refresh without a page reload; search filters remain selected, and open drafts defer refresh until closed. Refresh data is also available at the top of each screen. No external font download is required.
+
 # Jolyn TAE workbook workspace
 
 Open **All Excel modules / enter records** on the home screen, or visit http://127.0.0.1:5050/workbook.

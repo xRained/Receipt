@@ -337,3 +337,12 @@ class ReviewApiTests(unittest.TestCase):
         row=next(r for r in closed if r['id']=='newp')
         self.assertEqual(row['matched_receipt_numbers'],'NEW-202')
         self.assertFalse(any(r['id']=='newp' for r in self.client.get('/api/materials/entries?status=open').get_json()['rows']))
+
+    def test_lightweight_change_revision_detects_saved_changes(self):
+        before=self.client.get('/api/changes')
+        self.assertEqual(before.status_code,200)
+        self.assertEqual(before.headers['Cache-Control'],'no-store')
+        with module.db() as c:c.execute('INSERT OR REPLACE INTO accounts VALUES(?,?)',('ZZ-9999','Revision test'))
+        after=self.client.get('/api/changes').get_json()
+        self.assertNotEqual(before.get_json()['revision'],after['revision'])
+        self.assertEqual(set(after),{'revision'})

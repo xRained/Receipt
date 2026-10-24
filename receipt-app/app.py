@@ -254,6 +254,19 @@ def workbook_workspace():
 @app.get('/api/health')
 def health():return jsonify(app='tally-local',workspace=str(ROOT.resolve()),pid=os.getpid(),version=RUNNING_VERSION)
 
+@app.get('/api/changes')
+def changes():
+    # File metadata also detects edits made by another local app process.
+    stamps=[]
+    for suffix in ['', '-wal']:
+        path=Path(str(DATA/'receipts.sqlite3')+suffix)
+        try:
+            info=path.stat();stamps.append((info.st_mtime_ns,info.st_size))
+        except FileNotFoundError:stamps.append((0,0))
+    response=jsonify(revision=hashlib.sha256(repr(stamps).encode()).hexdigest()[:20])
+    response.headers['Cache-Control']='no-store'
+    return response
+
 @app.get('/api/state')
 def state():
     with db() as c:
