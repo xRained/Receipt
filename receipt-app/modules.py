@@ -25,6 +25,39 @@ DEFINITIONS={
 }
 
 
+def filter_module_rows(rows,kind,args):
+    """Search displayed data without scanning OCR text or raw workbook evidence."""
+    query=str(args.get('q','')).strip().lower()
+    compact=norm(query)
+    method=norm(args.get('method',''));code=args.get('code','');status=args.get('status','')
+    start=args.get('from','');end=args.get('to','')
+    try:
+        low=float(args['min']) if args.get('min') else None
+        high=float(args['max']) if args.get('max') else None
+    except ValueError:raise ValueError('Enter valid minimum and maximum amounts')
+    result=[]
+    for row in rows:
+        values=[str(v) for k,v in row.items() if isinstance(v,(str,int,float)) and k not in ['ocr_text','image','id','source']]
+        if query and not any(query in v.lower() or (compact and compact in norm(v)) for v in values):continue
+        if method and norm(row.get('method',row.get('kind','')))!=method:continue
+        if code and row.get('code')!=code:continue
+        day=str(row.get('date',row.get('day',row.get('period',''))))
+        if start and day<start:continue
+        if end and day>end:continue
+        amount=row.get('amount',row.get('total'))
+        if amount is not None:
+            amount=float(amount)/(100 if kind=='controls' else 1)
+        if low is not None and (amount is None or amount<low):continue
+        if high is not None and (amount is None or amount>high):continue
+        remaining=float(row.get('remaining',0));allocated=float(row.get('allocated',0))
+        if status=='open' and remaining<=.005:continue
+        if status=='closed' and remaining>.005:continue
+        if status=='partial' and not (allocated>0 and remaining>.005):continue
+        if status=='missing-si' and (row.get('receipt_no') or row.get('linked_receipt_numbers')):continue
+        result.append(row)
+    return result
+
+
 def install(app,db,records,cents):
     @app.get('/api/modules')
     def module_list():
@@ -80,9 +113,12 @@ def install(app,db,records,cents):
                                 historic={k:money(v.get(col)) if isinstance(v.get(col),(int,float)) else 0 for k,col in mapping.items()}
                                 rows.append(dict(period=period,**historic,bank=None,personal=None,basis='Historical source snapshot; supporting detail not supplied'))
                         rows.sort(key=lambda r:r['period'])
-        if month and kind in ['payment','receipt','controls','daily']:
+        if month and kind in ['payment','receipt','controls','daily','monthly']:
             rows=[r for r in rows if (r.get('receipt_month')==month if kind=='receipt' else str(r.get('date',r.get('day',r.get('period','')))).startswith(month))]
-        return jsonify(id=slug,name=('Cash Voucher' if slug=='cash-vouchers' else 'Check Voucher' if slug=='cheque-vouchers' else name),workbook=workbook,type=kind,rows=rows,
+        total_rows=len(rows)
+        try:rows=filter_module_rows(rows,kind,request.args)
+        except ValueError as e:return jsonify(error=str(e)),400
+        return jsonify(id=slug,name=('Cash Voucher' if slug=='cash-vouchers' else 'Check Voucher' if slug=='cheque-vouchers' else name),workbook=workbook,type=kind,rows=rows,total_rows=total_rows,
                        note='Supplier and COA modules share one master across both workbooks. Historical transaction details are preserved when a master is edited. Summaries derive from payment detail; cash-control figures are separate evidence.')
 
     @app.post('/api/master/supplier')
