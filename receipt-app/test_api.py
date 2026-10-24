@@ -157,7 +157,7 @@ class ReviewApiTests(unittest.TestCase):
 
     def test_next_month_voucher_import_matches_older_payment_without_totals(self):
         with module.db() as c:c.execute("INSERT OR REPLACE INTO workspace_settings VALUES('workflow','materials_intake_receipt_presence')")
-        p=self.client.post('/api/record',json=dict(kind='payment',collection='Material Expense',date='2026-09-20',company='Voucher Upload Fixture',tin='123-456-789',method='GCash',amount=1000,fee=15,reference='GCASH-VOUCHER-TEST'))
+        p=self.client.post('/api/record',json=dict(kind='payment',collection='Material Expense',date='2026-09-20',company='Voucher Upload Fixture',tin='123-456-789',method='GCash',amount=1000,fee=15,reference='GCASH-VOUCHER-TEST',receipt_no='INV-TEST-001'))
         self.assertEqual(p.status_code,200,p.data);pid=p.get_json()['id']
         w=openpyxl.Workbook();s=w.active;s.title='October Cash Voucher'
         headers={'A':'DATE','D':'PARTICULARS','M':'S.I#','N':'TIN','O':'ADDRESS','P':'CODE','Q':'ACCOUNT','R':'TAG','S':'AMOUNT','T':'INPUT TAX - GOODS','U':'INPUT TAX - SERVICES','V':'NET AMOUNT','W':'EXPANDED WITHHOLDING TAX','X':'AMOUNT PAID'}
@@ -226,7 +226,7 @@ class ReviewApiTests(unittest.TestCase):
         body.update(personal_amount=1100,amount=24033.48)
         self.assertEqual(self.client.post('/api/record',json=body).status_code,200)
 
-    def test_exact_supplier_si_auto_confirmation_allows_shared_receipt(self):
+    def test_partial_payments_find_si_without_auto_confirming_amounts(self):
         with module.db() as c:
             c.execute("INSERT OR REPLACE INTO workspace_settings VALUES('workflow','materials_intake_receipt_presence')")
             for rid,kind,amount in [('exact1','payment',100),('exact2','payment',200),('exactr','receipt',300)]:
@@ -237,5 +237,18 @@ class ReviewApiTests(unittest.TestCase):
         for row in rows:
             if row['payment']['id'] in ['exact1','exact2']:
                 self.assertEqual(row['status'],'found')
-                self.assertTrue(next(c for c in row['candidates'] if c['receipt']['id']=='exactr')['automatic'])
+                self.assertFalse(next(c for c in row['candidates'] if c['receipt']['id']=='exactr').get('automatic',False))
         with module.db() as c:self.assertEqual(c.execute('SELECT COUNT(*) FROM allocations').fetchone()[0],0)
+
+    def test_auto_link_reference_identity_and_amount_all_required(self):
+        with module.db() as c:
+            for rid,kind,reference,amount,tin in [('refp','payment','PC-EXAMPLE-001',100,'123-456-789'),('refr','receipt','PC-EXAMPLE-001',100,'123-456-789')]:
+                body=dict(company='Example reference supplier',amount=amount,reference=reference,tin=tin,collection='Material Expense' if kind=='payment' else 'Cash Voucher',code='CS-0001',receipt_month='2026-09')
+                c.execute('INSERT INTO records VALUES(?,?,?,?,?)',(rid,kind,json.dumps(body),'Example',None))
+        self.assertEqual(module.app.refresh_material_presence(),1)
+        for field,value in [('amount',101),('tin','987-654-321'),('reference','OTHER-REFERENCE')]:
+            with module.db() as c:
+                original=json.loads(c.execute("SELECT body FROM records WHERE id='refr'").fetchone()[0]);changed=dict(original);changed[field]=value
+                c.execute("UPDATE records SET body=? WHERE id='refr'",(json.dumps(changed),))
+            self.assertEqual(module.app.refresh_material_presence(),0)
+            with module.db() as c:c.execute("UPDATE records SET body=? WHERE id='refr'",(json.dumps(original),))

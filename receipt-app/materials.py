@@ -109,10 +109,12 @@ def install(app,get_data,db,records,cents):
             c.execute('BEGIN IMMEDIATE')
             c.execute("DELETE FROM presence_links WHERE match_kind='automatic'")
             allrows=records(c);ps=[r for r in allrows if material_payment(r)]
-            rs=[r for r in allrows if cash_voucher(r) and receipt_numbers(r)]
+            rs=[r for r in allrows if cash_voucher(r) and (receipt_numbers(r) or r.get('reference'))]
             blocked={tuple(r) for r in c.execute('SELECT payment,receipt FROM presence_dismissals')}
             manual={tuple(r) for r in c.execute('SELECT payment,receipt FROM presence_links')}
-            candidates=[];exact_pairs=[]
+            def identifiers(row):
+                return {norm(value) for value in receipt_numbers(row)|{str(row.get('reference') or '')} if norm(value)}
+            candidates=[]
             for p in ps:
                 for r in rs:
                     pair=(p['id'],r['id'])
@@ -120,14 +122,11 @@ def install(app,get_data,db,records,cents):
                     pt,rt=tin(p.get('tin')),tin(r.get('tin'))
                     if pt and rt and pt!=rt:continue
                     same=bool((pt and pt==rt) or (norm(p['company']) and norm(p['company'])==norm(r['company'])))
-                    if receipt_numbers(p):
-                        if same and receipt_numbers(p)&receipt_numbers(r):exact_pairs.append(pair)
-                        continue
-                    if same and cents(p['amount']) in {cents(r['amount']),cents(r.get('settlement_amount',r['amount']))}:candidates.append(pair)
+                    amount_same=cents(p['amount']) in {cents(r['amount']),cents(r.get('settlement_amount',r['amount']))}
+                    if same and amount_same and identifiers(p)&identifiers(r):candidates.append(pair)
             from collections import Counter
             pc=Counter(p for p,r in candidates);rc=Counter(r for p,r in candidates)
-            ec=Counter(p for p,r in exact_pairs)
-            accepted=[(p,r) for p,r in exact_pairs if ec[p]==1]+[(p,r) for p,r in candidates if pc[p]==1 and rc[r]==1]
+            accepted=[(p,r) for p,r in candidates if pc[p]==1 and rc[r]==1]
             c.executemany("INSERT INTO presence_links(payment,receipt,match_kind) VALUES(?,?,'automatic')",accepted)
         return len(accepted)
     app.refresh_material_presence=refresh_matches
