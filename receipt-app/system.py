@@ -129,7 +129,7 @@ def install(app, get_data, db, records, cents, auto_match):
             if b.get('kind') not in ['cash','gcash','cheque']:raise ValueError('Choose cash, GCash or cheque')
         except (ValueError,KeyError) as e:return jsonify(error=str(e)),400
         with db() as c:
-            scope=c.execute("SELECT value FROM workspace_settings WHERE key='scope_month'").fetchone()
+            scope=c.execute("SELECT value FROM workspace_settings WHERE key='scope_month' AND NOT EXISTS (SELECT 1 FROM workspace_settings WHERE key='workflow' AND value='materials_intake_receipt_presence')").fetchone()
             if scope and not day.startswith(scope['value']):return jsonify(error='Control date must be in the active workspace month'),400
             if b.get('id'):
                 old=c.execute('SELECT * FROM controls WHERE id=?',(b['id'],)).fetchone()
@@ -147,7 +147,7 @@ def install(app, get_data, db, records, cents, auto_match):
             day=date.fromisoformat(b['date']).isoformat()
             with db() as c:
                 c.execute('BEGIN IMMEDIATE');r=next((r for r in records(c) if r['id']==b.get('payment')),None)
-                scope=c.execute("SELECT value FROM workspace_settings WHERE key='scope_month'").fetchone()
+                scope=c.execute("SELECT value FROM workspace_settings WHERE key='scope_month' AND NOT EXISTS (SELECT 1 FROM workspace_settings WHERE key='workflow' AND value='materials_intake_receipt_presence')").fetchone()
                 if scope and not day.startswith(scope['value']):raise ValueError('Return date must be in the active workspace month')
                 if not r or r['kind']!='payment' or r.get('treatment')!='advance':raise ValueError('Select an advance payment first')
                 if value>cents(r['remaining']):raise ValueError('Return exceeds the remaining advance')
@@ -179,6 +179,7 @@ def install(app, get_data, db, records, cents, auto_match):
             templates=[dict(r) for r in c.execute('SELECT * FROM templates')]
             scoped=c.execute("SELECT value FROM workspace_settings WHERE key='scope_month'").fetchone()
             scope=scoped['value'] if scoped else None
+            if c.execute("SELECT 1 FROM workspace_settings WHERE key='workflow' AND value='materials_intake_receipt_presence'").fetchone():scope=None
             if scope and month!=scope:return jsonify(error='Export the active workspace month: '+scope),400
             rs=records(c);suppliers=[dict(r) for r in c.execute('SELECT * FROM suppliers ORDER BY name')];accounts=[dict(r) for r in c.execute('SELECT * FROM accounts ORDER BY code')]
             controls=[dict(r) for r in c.execute('SELECT * FROM controls ORDER BY day')]

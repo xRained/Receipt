@@ -236,6 +236,11 @@ def index(): return render_template('materials_presence.html',deployment_notice=
 @app.get('/assets/<path:name>')
 def public_asset(name):return send_from_directory(ROOT/'static',name)
 
+@app.get('/workbook')
+def workbook_workspace():
+    return render_template('index.html')
+
+
 @app.get('/api/health')
 def health():return jsonify(app='tally-local',workspace=str(ROOT.resolve()),pid=os.getpid(),version=RUNNING_VERSION)
 
@@ -260,7 +265,7 @@ def save():
         old = c.execute('SELECT * FROM records WHERE id=?', (rid,)).fetchone()
         scope=c.execute("SELECT value FROM workspace_settings WHERE key='scope_month'").fetchone()
         workflow=c.execute("SELECT value FROM workspace_settings WHERE key='workflow'").fetchone()
-        flexible_materials=workflow and workflow['value']=='materials_intake_receipt_presence' and b.get('collection') in ['Material Expense','Cash Voucher']
+        flexible_materials=workflow and workflow['value']=='materials_intake_receipt_presence' and b.get('collection') in ['Material Expense','Cost of Sales Expense','Operating Expense','COS_Allowance','Cash Voucher','Check Voucher','September Cash Voucher','September Check Voucher','Non Receipt']
         if flexible_materials:
             try:
                 if b['kind']=='payment' or b.get('date'):date.fromisoformat(str(b.get('date','')))

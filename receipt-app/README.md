@@ -1,3 +1,12 @@
+# Jolyn TAE workbook workspace
+
+Open **All Excel modules / enter records** on the home screen, or visit http://127.0.0.1:5050/workbook.
+Choose the working month and a sidebar register, then **Add entry**. Cash Voucher records physical receipts; Check Voucher records cheque receipts; Non Receipt records expenses without supporting receipts. Enter each receipt separately, including multiple receipts on the same day. Receipt dates can precede the collection month. Photographs are optional; batch photo uploads create editable drafts.
+
+The sidebar also provides Material Expense, Cost of Sales Expense, Operating Expense, COS_Allowance, GCashCheck controls, calculated daily/monthly summaries, and shared supplier/COA masters. Record a payment once in its expense module and its supporting receipt in the appropriate voucher register. Receipt rows and control figures are not added as extra payment expenses. Use the home screen for Materials receipt-presence matching; amount allocations in the workbook workspace are separate optional settlement records.
+
+App updates must preserve the local `data` folder. GitHub does not contain financial records. Restart with `start.bat` after updating code. Complete exports require both original workbook templates, retained in your local data folder. Summary totals cover saved payment detail; historical tabs not imported are not automatically restored.
+
 # Jolyn TAE - Material Expense upload and receipt matching
 
 Current workflow: [MATERIAL_EXPENSE_GUIDE.md](MATERIAL_EXPENSE_GUIDE.md). All payment modes, editable image drafts, supplier/COA lookup, and monthly Cash Voucher imports are enabled locally. Earlier Step 1 notes below describe the previous scope.

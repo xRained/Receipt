@@ -44,7 +44,13 @@ def install(app,db,records,cents):
             elif kind=='controls':rows=[dict(r) for r in c.execute('SELECT * FROM controls ORDER BY day')]
             elif kind=='payment':rows=[r for r in rs if r['kind']=='payment' and collection(r)==name]
             elif kind=='receipt':
-                rows=[r for r in rs if r['kind']=='receipt' and ((r.get('collection')=='Non Receipt' or r.get('treatment')=='no_receipt') if slug=='non-receipt' else (r.get('collection')!='Non Receipt' and r.get('treatment')!='no_receipt' and (r.get('collection')=='September Check Voucher' or r.get('method','').lower() in ['cheque','check'])==(slug=='cheque-vouchers')))]
+                def register(row):
+                    name=row.get('collection','').lower()
+                    if name=='non receipt' or row.get('treatment')=='no_receipt':return 'non-receipt'
+                    if 'cash voucher' in name:return 'cash-vouchers'
+                    if 'check v' in name or 'cheque v' in name:return 'cheque-vouchers'
+                    return 'cheque-vouchers' if row.get('method','').lower() in ['cheque','check'] else 'cash-vouchers'
+                rows=[r for r in rs if r['kind']=='receipt' and register(r)==slug]
             else:
                 groups=defaultdict(lambda:dict(materials=0,costs=0,operating=0,allowances=0,principal=0,fees=0,total=0,cash=0,gcash=0,cheque=0,bank=0,personal=0))
                 for r in rs:
@@ -76,7 +82,7 @@ def install(app,db,records,cents):
                         rows.sort(key=lambda r:r['period'])
         if month and kind in ['payment','receipt','controls','daily']:
             rows=[r for r in rows if (r.get('receipt_month')==month if kind=='receipt' else str(r.get('date',r.get('day',r.get('period','')))).startswith(month))]
-        return jsonify(name=name,workbook=workbook,type=kind,rows=rows,
+        return jsonify(id=slug,name=('Cash Voucher' if slug=='cash-vouchers' else 'Check Voucher' if slug=='cheque-vouchers' else name),workbook=workbook,type=kind,rows=rows,
                        note='Supplier and COA modules share one master across both workbooks. Historical transaction details are preserved when a master is edited. Summaries derive from payment detail; cash-control figures are separate evidence.')
 
     @app.post('/api/master/supplier')

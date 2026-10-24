@@ -136,7 +136,7 @@ def build_workbook(template, snapshot, records, suppliers, accounts, controls, m
             column='N' if name=='Material Expense' else 'H' if name=='COS_Allowance' else 'K'
             rows.append({'A':'TOTAL',''+column:(f'SUM({column}4:{column}{3+len(selected)})' if selected else '0',money(sum(r['amount']+float(r.get('fee',0) or 0)*(name!='COS_Allowance') for r in selected)))})
         elif 'Voucher' in name or name=='Non Receipt':
-            selected=[r for r in receipts if (r.get('collection')=='Non Receipt' or r.get('treatment')=='no_receipt')==(name=='Non Receipt') and (name=='Non Receipt' or ('check' in str(r.get('method','')).lower() or 'cheque' in str(r.get('method','')).lower() or r.get('collection')=='September Check Voucher')==('Check' in name))]
+            selected=[r for r in receipts if (r.get('collection')=='Non Receipt' or r.get('treatment')=='no_receipt')==(name=='Non Receipt') and (name=='Non Receipt' or ('check' in str(r.get('method','')).lower() or 'cheque' in str(r.get('method','')).lower() or 'check v' in r.get('collection','').lower())==('Check' in name))]
             for r in selected:
                 n=header+len(rows)+1
                 if name=='Non Receipt':values=dict(A=serial(r.get('date')),B=r['company'],C=r.get('code'),D=r.get('account'),F=money(r['amount']))

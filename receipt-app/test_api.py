@@ -185,4 +185,24 @@ class ReviewApiTests(unittest.TestCase):
         self.assertEqual(len(self.client.get('/api/materials-presence?month=2026-11').get_json()['vouchers']),1)
 
 
-if __name__=='__main__':unittest.main()
+
+
+    def test_workbook_entry_registers_and_multiple_receipts_per_day(self):
+        with module.db() as c:
+            c.execute("INSERT OR REPLACE INTO workspace_settings VALUES('workflow','materials_intake_receipt_presence')")
+        self.assertEqual(self.client.get('/workbook').status_code,200)
+        for collection,slug,method,count in [('Cash Voucher','cash-vouchers','Cash',3),('Check Voucher','cheque-vouchers','Cheque',1),('Non Receipt','non-receipt','GCash',1)]:
+            for n in range(count):
+                body=dict(kind='receipt',collection=collection,receipt_month='2026-10',date='2026-07-02',company='Example '+collection,amount=100+n,method=method,code='CS-0001',receipt_no='' if collection=='Non Receipt' else 'SI-'+str(n),treatment='no_receipt' if collection=='Non Receipt' else 'business')
+                response=self.client.post('/api/record',json=body)
+                self.assertEqual(response.status_code,200,response.get_json())
+            rows=self.client.get('/api/modules/'+slug+'?month=2026-10').get_json()['rows']
+            self.assertEqual(len(rows),count)
+            self.assertTrue(all(r['date']=='2026-07-02' for r in rows))
+        for collection in ['Cost of Sales Expense','Operating Expense','COS_Allowance']:
+            response=self.client.post('/api/record',json=dict(kind='payment',collection=collection,date='2026-10-24',company='Example employee',amount=200,method='Cash'))
+            self.assertEqual(response.status_code,200,response.get_json())
+        response=self.client.post('/api/controls',json=dict(kind='gcash',date='2026-10-24',amount=600,note='Daily control'))
+        self.assertEqual(response.status_code,200,response.get_json())
+        self.assertEqual(len(self.client.get('/api/modules/cash-controls?month=2026-10').get_json()['rows']),1)
+        self.assertEqual(len(self.client.get('/api/modules/cash-vouchers?month=2026-11').get_json()['rows']),0)
