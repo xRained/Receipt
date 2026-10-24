@@ -123,5 +123,66 @@ class ReviewApiTests(unittest.TestCase):
         w=openpyxl.load_workbook(io.BytesIO(response.data),read_only=True)
         self.assertIn('No candidate found',w.sheetnames);w.close()
 
+    def test_all_material_payment_modes_and_future_dates(self):
+        with module.db() as c:c.execute("INSERT OR REPLACE INTO workspace_settings VALUES('workflow','materials_intake_receipt_presence')")
+        for i,method in enumerate(['Online Payment','Bank','GCash','Cheque','Cash']):
+            r=self.client.post('/api/record',json=dict(kind='payment',collection='Material Expense',date='2026-10-05',company='Mode Fixture '+method,method=method,amount=100+i,fee=5,reference='MODE-TEST-'+str(i),code='CS-0001',account='Materials'))
+            self.assertEqual(r.status_code,200,r.data)
+        rows=self.client.get('/api/materials/entries?month=2026-10').get_json()['rows']
+        self.assertEqual(len(rows),5)
+        self.assertEqual({r['method'] for r in rows},{'Online Payment','Bank','GCash','Cheque','Cash'})
+        response=self.client.get('/api/materials/export?month=2026-10')
+        w=openpyxl.load_workbook(io.BytesIO(response.data),read_only=True,data_only=True)
+        self.assertEqual(w['Material Expense'].max_column,14)
+        self.assertEqual(w['Material Expense']['N2'].value,105)
+        w.close()
+
+    def test_reference_workbook_drives_image_text_fields(self):
+        w=openpyxl.Workbook();s=w.active;s.title='Suppliers List'
+        s.append(['Supplier','Tin','Address']);s.append(['OCR Supplier Fixture','123-456-789','Fixture Street'])
+        a=w.create_sheet('Copy of Accounts');a.append(['CS-0001','Materials'])
+        buf=io.BytesIO();w.save(buf);w.close()
+        r=self.client.post('/api/materials/import',data={'kind':'references','month':'2026-10','file':(io.BytesIO(buf.getvalue()),'references.xlsx')},content_type='multipart/form-data')
+        self.assertEqual(r.status_code,200,r.data)
+        self.assertEqual(r.get_json()['supplier_rows'],1)
+        r=self.client.post('/api/materials/parse',json={'mode':'payment','month':'2026-10','text':'Sent to:\nOCR Supplier Fixture\nAmount\nPHP 1,000.00\nCheque No. 888888\nOct 5, 2026'})
+        self.assertEqual(r.status_code,200)
+        draft=r.get_json()['draft']
+        self.assertEqual(draft['company'],'OCR Supplier Fixture')
+        self.assertEqual(draft['tin'],'123-456-789')
+        self.assertEqual(draft['address'],'Fixture Street')
+        self.assertEqual(draft['code'],'CS-0001')
+        self.assertEqual(draft['method'],'Cheque')
+        self.assertEqual(draft['reference'],'888888')
+
+    def test_next_month_voucher_import_matches_older_payment_without_totals(self):
+        with module.db() as c:c.execute("INSERT OR REPLACE INTO workspace_settings VALUES('workflow','materials_intake_receipt_presence')")
+        p=self.client.post('/api/record',json=dict(kind='payment',collection='Material Expense',date='2026-09-20',company='Voucher Upload Fixture',tin='123-456-789',method='GCash',amount=1000,fee=15,reference='GCASH-VOUCHER-TEST'))
+        self.assertEqual(p.status_code,200,p.data);pid=p.get_json()['id']
+        w=openpyxl.Workbook();s=w.active;s.title='October Cash Voucher'
+        headers={'A':'DATE','D':'PARTICULARS','M':'S.I#','N':'TIN','O':'ADDRESS','P':'CODE','Q':'ACCOUNT','R':'TAG','S':'AMOUNT','T':'INPUT TAX - GOODS','U':'INPUT TAX - SERVICES','V':'NET AMOUNT','W':'EXPANDED WITHHOLDING TAX','X':'AMOUNT PAID'}
+        for col,value in headers.items():s[col+'1']=value
+        from datetime import datetime
+        values={'A':datetime(2026,7,10),'D':'Voucher Upload Fixture','M':'INV-TEST-001','N':'123-456-789','P':'CS-0001','Q':'Materials','S':1000,'W':0,'X':1000}
+        for col,value in values.items():s[col+'2']=value
+        buf=io.BytesIO();w.save(buf);w.close();content=buf.getvalue()
+        def upload():return self.client.post('/api/materials/import',data={'kind':'vouchers','month':'2026-10','file':(io.BytesIO(content),'October.xlsx')},content_type='multipart/form-data')
+        response=upload();self.assertEqual(response.status_code,200,response.data)
+        self.assertEqual(response.get_json()['imported'],1)
+        self.assertEqual(response.get_json()['automatic_receipt_links'],1)
+        data=self.client.get('/api/materials-presence?month=2026-10&method=GCash').get_json()
+        self.assertEqual(data['rows'][0]['status'],'found')
+        self.assertTrue(data['rows'][0]['candidates'][0]['automatic'])
+        self.assertEqual(data['vouchers'][0]['date'],'2026-07-10')
+        self.assertEqual(upload().get_json()['imported'],0)
+        entries=self.client.get('/api/materials/entries').get_json()['rows']
+        self.assertEqual(next(r for r in entries if r['id']==pid)['matched_receipt_numbers'],'INV-TEST-001')
+        with module.db() as c:self.assertEqual(c.execute('SELECT COUNT(*) FROM allocations').fetchone()[0],0)
+        # A recurring monthly filename/sheet must not collide with prior months.
+        november=self.client.post('/api/materials/import',data={'kind':'vouchers','month':'2026-11','file':(io.BytesIO(content),'October.xlsx')},content_type='multipart/form-data')
+        self.assertEqual(november.status_code,200,november.data)
+        self.assertEqual(november.get_json()['imported'],1)
+        self.assertEqual(len(self.client.get('/api/materials-presence?month=2026-11').get_json()['vouchers']),1)
+
 
 if __name__=='__main__':unittest.main()

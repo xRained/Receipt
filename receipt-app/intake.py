@@ -11,12 +11,14 @@ def extract(text, mode='auto', suppliers=(), history=()):
     if kind not in ('payment','receipt'):raise ValueError('Choose payment, receipt or automatic detection')
     draft=dict(kind=kind,date='',company='',reference='',method='GCash' if re.search('gcash',text,re.I) else 'Bank' if payment else 'Cash',
                receipt_no='',tin='',address='',amount='',fee=0,withholding=0,remarks='',code='',account='',project='',category='',treatment='business')
+    if kind=='payment':
+        draft['method']='GCash' if re.search(r'gcash',text,re.I) else 'Cheque' if re.search(r'\b(?:cheque|check)\s*(?:no\.?|number|#|payment)',text,re.I) else 'Cash' if re.search(r'\bcash\s+(?:payment|paid)',text,re.I) else 'Online Payment'
     def find(field,patterns):
         for pattern in patterns:
             match=re.search(pattern,text,re.I|re.M)
             if match:
                 draft[field]=match.group(1).strip();return
-    find('reference',[r'(?:reference|ref\.?|transaction)(?:\s*(?:number|no\.?|id|#))?\s*[:#]?\s*([A-Z0-9][A-Z0-9-]{5,})'])
+    find('reference',[r'(?:reference|ref\.?|transaction)(?:\s*(?:number|no\.?|id|#))?\s*[:#]?\s*([A-Z0-9][A-Z0-9-]{5,})',r'(?:cheque|check)\s*(?:no\.?|number|#)\s*[:#]?\s*([A-Z0-9-]{3,})'])
     find('receipt_no',[r'(?:sales\s+invoice|service\s+invoice|invoice|receipt|S\.?I\.?)\s*(?:no\.?|number|#)\s*[:#]?\s*([A-Z0-9-]+)'])
     find('tin',[r'\b(\d{3}[- ]\d{3}[- ]\d{3}(?:[- ]\d{3})?)\b'])
     amount=r'(?:PHP|P|₱)?\s*([0-9][0-9,]*(?:\.\d{2})?)(?![\d.])'

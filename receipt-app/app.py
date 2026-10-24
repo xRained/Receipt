@@ -24,6 +24,7 @@ DATA.mkdir(parents=True,exist_ok=True)
 (DATA / 'uploads').mkdir(exist_ok=True)
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 30 * 1024 * 1024
+app.config['HOSTED_PREVIEW']=HOSTED_PREVIEW
 
 @app.before_request
 def protect_hosted_preview():
@@ -97,7 +98,7 @@ def records(c):
 def auto_match():
     with db() as c:
         workflow=c.execute("SELECT value FROM workspace_settings WHERE key='workflow'").fetchone()
-        if workflow and workflow['value']=='online_material_receipt_presence':return {'links':0,'payments':0,'amount':0,'note':'Receipt presence only; no payment allocations in step 1'}
+        if workflow and workflow['value'] in ['online_material_receipt_presence','materials_intake_receipt_presence']:return {'links':0,'payments':0,'amount':0,'note':'Receipt presence only; no payment allocations'}
         c.execute('BEGIN IMMEDIATE')
         blocked = [tuple(r) for r in c.execute('SELECT payment,receipt FROM match_blocks')]
         aliases = [tuple(r) for r in c.execute('SELECT payment_identity,receipt_identity FROM supplier_aliases')]
@@ -258,7 +259,15 @@ def save():
     with db() as c:
         old = c.execute('SELECT * FROM records WHERE id=?', (rid,)).fetchone()
         scope=c.execute("SELECT value FROM workspace_settings WHERE key='scope_month'").fetchone()
-        if scope:
+        workflow=c.execute("SELECT value FROM workspace_settings WHERE key='workflow'").fetchone()
+        flexible_materials=workflow and workflow['value']=='materials_intake_receipt_presence' and b.get('collection') in ['Material Expense','Cash Voucher']
+        if flexible_materials:
+            try:
+                if b['kind']=='payment' or b.get('date'):date.fromisoformat(str(b.get('date','')))
+                if b['kind']=='receipt':date.fromisoformat(str(b.get('receipt_month',''))+'-01')
+            except ValueError:return jsonify(error='Enter a valid payment date and receipt collection month'),400
+            if b['kind']=='payment' and b.get('method') not in ['Online Payment','Bank','GCash','Cheque','Cash']:return jsonify(error='Choose a supported payment mode'),400
+        if scope and not flexible_materials:
             month=scope['value']
             if b['kind']=='payment' and not str(b.get('date','')).startswith(month):return jsonify(error=f'This workspace contains {month} payments only. Enter a payment date in that month.'),400
             if b['kind']=='receipt' and b.get('receipt_month',month)!=month:return jsonify(error=f'This workspace contains the {month} receipt collection only.'),400
@@ -310,7 +319,8 @@ def save():
         if old: c.execute('UPDATE records SET body=? WHERE id=?', (json.dumps(body),rid))
         else: c.execute('INSERT INTO records VALUES(?,?,?,?,?)', (rid,b['kind'],json.dumps(body),'Manual / image review',None))
         if b.get('image'):c.execute('UPDATE documents SET record_id=? WHERE image=? AND (record_id IS NULL OR record_id=?)',(rid,b['image'],rid))
-    return jsonify(id=rid, matching=auto_match())
+    linked=app.refresh_material_presence() if hasattr(app,'refresh_material_presence') else 0
+    return jsonify(id=rid, matching=auto_match(),automatic_receipt_links=linked)
 
 @app.post('/api/upload')
 def upload():
@@ -417,6 +427,8 @@ from modules import install as install_modules
 install_modules(app,db,records,cents)
 from presence import install as install_presence
 install_presence(app,db,records)
+from materials import install as install_materials
+install_materials(app,lambda:DATA,db,records,cents)
 
 if __name__=='__main__':
     (DATA/'server.pid').write_text(str(os.getpid()))

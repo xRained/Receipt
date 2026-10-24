@@ -1,3 +1,9 @@
+# Jolyn TAE - Material Expense upload and receipt matching
+
+Current workflow: [MATERIAL_EXPENSE_GUIDE.md](MATERIAL_EXPENSE_GUIDE.md). All payment modes, editable image drafts, supplier/COA lookup, and monthly Cash Voucher imports are enabled locally. Earlier Step 1 notes below describe the previous scope.
+
+---
+
 # Tally ? online Materials receipt checklist
 
 ## Current scope: Step 1

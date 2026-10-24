@@ -7,6 +7,7 @@ from difflib import SequenceMatcher
 from flask import jsonify,request,send_file
 import openpyxl
 from matching import norm,receipt_numbers,tin
+from materials import material_payment,cash_voucher
 
 
 def online_material(row):
@@ -57,39 +58,50 @@ def install(app,db,records):
     with db() as c:
         c.executescript('''CREATE TABLE IF NOT EXISTS presence_links(payment TEXT REFERENCES records(id),receipt TEXT REFERENCES records(id),PRIMARY KEY(payment,receipt));
         CREATE TABLE IF NOT EXISTS presence_dismissals(payment TEXT REFERENCES records(id),receipt TEXT REFERENCES records(id),PRIMARY KEY(payment,receipt));''')
+        if 'match_kind' not in [r['name'] for r in c.execute('PRAGMA table_info(presence_links)')]:c.execute("ALTER TABLE presence_links ADD COLUMN match_kind TEXT NOT NULL DEFAULT 'manual'")
 
-    def data(account):
+    def data(account,month=None,method=None,payment_month=None):
         with db() as c:
             allrows=records(c)
-            ps=[r for r in allrows if online_material(r)]
-            rs=[r for r in allrows if r['kind']=='receipt' and r.get('collection')=='September Cash Voucher']
+            scope=c.execute("SELECT value FROM workspace_settings WHERE key='scope_month'").fetchone()
+            month=month or (scope['value'] if scope else '2026-09')
+            ps=[r for r in allrows if material_payment(r) and (not payment_month or r.get('date','').startswith(payment_month)) and (not method or method=='all' or (online_material(r) if method=='online' else norm(r.get('method'))==norm(method)))]
+            rs=[r for r in allrows if cash_voucher(r) and (r.get('receipt_month') or month)==month]
             confirmed=[tuple(r) for r in c.execute('SELECT payment,receipt FROM presence_links')]
+            automatic={(r['payment'],r['receipt']) for r in c.execute("SELECT payment,receipt FROM presence_links WHERE match_kind='automatic'")}
             dismissed=[tuple(r) for r in c.execute('SELECT payment,receipt FROM presence_dismissals')]
         rows,selected=compare(ps,rs,account,confirmed,dismissed)
+        for row in rows:
+            for candidate in row['candidates']+row['other_accounts']:
+                if (row['payment']['id'],candidate['receipt']['id']) in automatic:
+                    candidate['confirmed']=False;candidate['automatic']=True
+                    candidate['reasons']=[reason for reason in candidate['reasons'] if reason!='Manually confirmed same receipt']
+                    candidate['reasons'].insert(0,'Automatically linked: unique supplier/TIN and exact amount match')
         choices=sorted({(r.get('code',''),r.get('account','')) for r in rs},key=lambda a:a[1])
+        if not any(code=='CS-0001' for code,title in choices):choices.insert(0,('CS-0001','Materials'))
         return dict(rows=rows,vouchers=selected,accounts=[dict(code=k,title=v) for k,v in choices],
-                    account=account,month='2026-09',source_payments='2026 EXPENSES 3rd Quarter.xlsx / Material Expense',
-                    source_receipts='9 SEPTEMBER 2026.xlsx / September Cash Voucher',
+                    account=account,month=month,source_payments='Material Expense - all payment modes',
+                    source_receipts=month+' Cash Voucher collection',
                     counts={status:sum(r['status']==status for r in rows) for status in ['found','review','not_found','other_account']})
 
     @app.get('/api/materials-presence')
-    def material_presence():return jsonify(data(request.args.get('account','CS-0001')))
+    def material_presence():return jsonify(data(request.args.get('account','CS-0001'),request.args.get('month'),request.args.get('method'),request.args.get('payment_month')))
 
     @app.post('/api/materials-presence/decision')
     def decision():
         b=request.get_json() or {}
         with db() as c:
             rows={r['id']:r for r in records(c)};p=rows.get(b.get('payment'));r=rows.get(b.get('receipt'))
-            if not p or not r or not online_material(p) or r.get('collection')!='September Cash Voucher':return jsonify(error='Choose an online material payment and a Cash Voucher receipt'),400
+            if not p or not r or not material_payment(p) or not cash_voucher(r):return jsonify(error='Choose a Material Expense payment and a Cash Voucher receipt'),400
             action=b.get('action')
             if action not in ['confirm','dismiss','undo']:return jsonify(error='Choose confirm, dismiss or undo'),400
             for table in ['presence_links','presence_dismissals']:c.execute('DELETE FROM '+table+' WHERE payment=? AND receipt=?',(p['id'],r['id']))
-            if action!='undo':c.execute('INSERT INTO '+('presence_links' if action=='confirm' else 'presence_dismissals')+' VALUES(?,?)',(p['id'],r['id']))
+            if action!='undo':c.execute('INSERT INTO '+('presence_links' if action=='confirm' else 'presence_dismissals')+'(payment,receipt) VALUES(?,?)',(p['id'],r['id']))
         return jsonify(ok=True)
 
     @app.get('/api/materials-presence/export')
     def export_presence():
-        d=data(request.args.get('account','CS-0001'));w=openpyxl.Workbook();w.remove(w.active)
+        d=data(request.args.get('account','CS-0001'),request.args.get('month'),request.args.get('method'),request.args.get('payment_month'));w=openpyxl.Workbook();w.remove(w.active)
         def safe(value):return "'"+value if isinstance(value,str) and value.startswith(('=','+','-','@')) else value
         for status,title in [('not_found','No candidate found'),('review','Needs review'),('found','SI already listed'),('other_account','SI in another account')]:
             s=w.create_sheet(title);s.append(['Payment date','Payee','Reference','Payment SI','Payment amount','Status','Voucher SI','Voucher supplier','Voucher row','Account','Evidence / warning'])
@@ -103,6 +115,6 @@ def install(app,db,records):
             s.freeze_panes='A2';s.auto_filter.ref=s.dimensions
         s=w.create_sheet('Selected Cash Voucher');s.append(['Source row','Date','Supplier','SI','Account code','Account','Gross','Recorded amount paid'])
         for r in d['vouchers']:s.append([safe(v) for v in [r.get('source_row'),r.get('date'),r['company'],r.get('receipt_no'),r.get('code'),r.get('account'),r['amount'],r['settlement_amount']]])
-        s=w.create_sheet('Read me');s.append(['Scope','September online Material Expense vs September Cash Voucher; receipt dates are not restricted.']);s.append(['Purpose','Find receipts already listed or not yet found. No aggregate total reconciliation.']);s.append(['Caution','An identical SI number with differing supplier/TIN needs identity review; it is not proof of the same transaction.'])
+        s=w.create_sheet('Read me');s.append(['Scope','Material Expense vs '+d['month']+' Cash Voucher collection; receipt dates are not restricted.']);s.append(['Purpose','Find receipts already listed or not yet found. No aggregate total reconciliation.']);s.append(['Caution','An identical SI number with differing supplier/TIN needs identity review; it is not proof of the same transaction.'])
         buf=io.BytesIO();w.save(buf);buf.seek(0)
-        return send_file(buf,download_name='September online materials - receipt checklist.xlsx',as_attachment=True)
+        return send_file(buf,download_name=d['month']+' materials - receipt checklist.xlsx',as_attachment=True)
