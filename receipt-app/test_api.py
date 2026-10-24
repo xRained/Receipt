@@ -346,3 +346,17 @@ class ReviewApiTests(unittest.TestCase):
         after=self.client.get('/api/changes').get_json()
         self.assertNotEqual(before.get_json()['revision'],after['revision'])
         self.assertEqual(set(after),{'revision'})
+
+    def test_rounding_difference_remains_visible_after_automatic_allocation(self):
+        with module.db() as c:
+            for rid,kind,amount in [('centp','payment',2983.13),('centr','receipt',2983.12)]:
+                body=dict(company='Example cent supplier',amount=amount,receipt_no='SI-CENT-01',tin='333-444-555',collection='Material Expense' if kind=='payment' else 'Cash Voucher',code='CS-0001',receipt_month='2026-09')
+                c.execute('INSERT INTO records VALUES(?,?,?,?,?)',(rid,kind,json.dumps(body),'Example',None))
+        module.auto_match()
+        rows=self.client.get('/api/materials/entries?status=linked').get_json()['rows']
+        row=next(r for r in rows if r['id']=='centp')
+        self.assertEqual(row['amount'],2983.13)
+        self.assertEqual(row['allocated'],2983.12)
+        self.assertEqual(row['remaining'],.01)
+        self.assertEqual(row['matched_receipt_numbers'],'SI-CENT-01')
+        self.assertEqual(module.auto_match()['links'],0)

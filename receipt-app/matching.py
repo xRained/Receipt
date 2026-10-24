@@ -57,7 +57,7 @@ def centavos(value):
     return int((Decimal(str(value)) * 100).quantize(Decimal('1')))
 
 
-def plan_matches(rows, blocked=(), aliases=(), require_identifiers=False, allow_si_groups=False):
+def plan_matches(rows, blocked=(), aliases=(), require_identifiers=False, allow_si_groups=False, rounding_tolerance_cents=0):
     """Return only mutually unique exact matches and explicit receipt groups.
 
     Partial groups require a shared receipt number and a sum equal to the
@@ -139,8 +139,10 @@ def plan_matches(rows, blocked=(), aliases=(), require_identifiers=False, allow_
     for p in payments:
         if not remaining[p['id']]:
             continue
-        for r in receipts_by_amount[remaining[p['id']]]:
-            if remaining[r['id']] == remaining[p['id']] and eligible(p, r):
+        nearby=[r for amount,bucket in receipts_by_amount.items() if abs(amount-remaining[p['id']])<=rounding_tolerance_cents for r in bucket]
+        for r in nearby:
+            delta=remaining[r['id']]-remaining[p['id']]
+            if (delta==0 or (rounding_tolerance_cents and receipt_numbers(p)&receipt_numbers(r))) and eligible(p, r):
                 candidates.append((p, r))
     pc, rc = defaultdict(int), defaultdict(int)
     for p, r in candidates:
@@ -148,8 +150,8 @@ def plan_matches(rows, blocked=(), aliases=(), require_identifiers=False, allow_
         rc[r['id']] += 1
     for p, r in candidates:
         if pc[p['id']] == rc[r['id']] == 1:
-            plans.append(dict(payment=p['id'], receipt=r['id'], cents=remaining[p['id']],
-                              reason='Unique exact supplier and principal amount match'))
+            plans.append(dict(payment=p['id'], receipt=r['id'], cents=min(remaining[p['id']],remaining[r['id']]),
+                              reason='Unique supplier and S.I.#; small difference retained in remaining balance' if remaining[p['id']]!=remaining[r['id']] else 'Unique exact supplier and principal amount match'))
     return plans
 
 

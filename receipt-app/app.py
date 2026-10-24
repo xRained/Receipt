@@ -108,7 +108,7 @@ def auto_match():
         learn_from_allocations(c)
         planned=[]
         while True:
-            batch=plan_matches(records(c), blocked, aliases, allow_si_groups=True)
+            batch=plan_matches(records(c), blocked, aliases, allow_si_groups=True, rounding_tolerance_cents=100)
             for a in batch:
                 c.execute('INSERT INTO allocations VALUES(?,?,?) ON CONFLICT(payment,receipt) DO UPDATE SET cents=cents+excluded.cents', (a['payment'],a['receipt'],a['cents']))
                 c.execute('INSERT OR REPLACE INTO match_audit(payment,receipt,reason) VALUES(?,?,?)', (a['payment'],a['receipt'],a['reason']))
@@ -401,6 +401,7 @@ def allocate():
             rs={r['id']:r for r in records(c)}
             p,r=rs[b['payment']],rs[b['receipt']]
             if p['kind']!='payment' or r['kind']!='receipt': raise ValueError('Select a payment and a receipt')
+            if p.get('personal') or r.get('personal') or p.get('treatment')=='personal' or r.get('treatment')=='personal':raise ValueError('This entry is marked personal. Review its expense treatment before allocating company payments.')
             value=cents(b['amount'])
             if value<=0 or value>min(cents(p['remaining']),cents(r['remaining'])): raise ValueError('Allocation exceeds the remaining payment or receipt amount')
             c.execute('INSERT INTO allocations VALUES(?,?,?) ON CONFLICT(payment,receipt) DO UPDATE SET cents=cents+excluded.cents', (p['id'],r['id'],value))

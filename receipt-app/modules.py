@@ -53,6 +53,7 @@ def filter_module_rows(rows,kind,args):
         remaining=float(row.get('remaining',0));allocated=float(row.get('allocated',0))
         if status=='open' and remaining<=.005:continue
         if status=='closed' and remaining>.005:continue
+        if status=='linked' and allocated<=0:continue
         if status=='partial' and not (allocated>0 and remaining>.005):continue
         if status=='missing-si' and (row.get('receipt_no') or row.get('linked_receipt_numbers')):continue
         result.append(row)

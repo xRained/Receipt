@@ -86,3 +86,13 @@ class MatchingTests(unittest.TestCase):
         self.assertEqual(plan_matches([p1,p2,r,duplicate],allow_si_groups=True),[])
         p1['tin']='123-456-789';r['tin']='987-654-321'
         self.assertEqual(plan_matches([p1,p2,r],allow_si_groups=True),[])
+
+    def test_small_difference_allocates_only_available_money_without_writeoff(self):
+        p=row('p','payment',2983.13,receipt_no='SI-456',tin='123-456-789')
+        r=row('r','receipt',2983.12,receipt_no='SI-456',tin='123-456-789')
+        plans=plan_matches([p,r],rounding_tolerance_cents=100)
+        self.assertEqual(len(plans),1)
+        self.assertEqual(plans[0]['cents'],298312)
+        self.assertEqual(p['remaining'],2983.13)
+        r['tin']='987-654-321'
+        self.assertEqual(plan_matches([p,r],rounding_tolerance_cents=100),[])

@@ -202,6 +202,7 @@ def install(app,get_data,db,records,cents):
             status=request.args.get('status','')
             if status=='closed':rows=[r for r in rows if r['remaining']<=.005]
             elif status=='open':rows=[r for r in rows if r['remaining']>.005]
+            elif status=='linked':rows=[r for r in rows if r['allocated']>0]
             elif status=='partial':rows=[r for r in rows if r['allocated']>0 and r['remaining']>.005]
             links=list(c.execute('SELECT payment,receipt FROM presence_links'))
             for r in rows:r['matched_receipt_numbers']=', '.join(dict.fromkeys(byid[link['receipt']].get('receipt_no','') for link in links if link['payment']==r['id'])) or r.get('linked_receipt_numbers','')

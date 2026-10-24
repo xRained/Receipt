@@ -15,3 +15,5 @@ dialog{border-radius:21px;border:1px solid #e5d6ef;box-shadow:0 25px 90px #49305
 @media(max-width:1100px){header{align-items:flex-start;flex-wrap:wrap;padding:23px}.presenceApp header{flex-wrap:wrap}.actions{justify-content:flex-start}main{padding:22px}.presenceApp{padding:22px}}
 @media(max-width:650px){main,.presenceApp{padding:15px 12px}header{padding:20px;border-radius:17px}.presenceApp h1,header h1{font-size:23px}.appBrand img{width:62px;height:62px}.appBrand{font-size:20px}aside{border-bottom:1px solid var(--line)}.brand img{width:46px;height:46px}.brand b{font-size:18px}.stats article{padding:16px}.stats strong{font-size:22px}.liveToolbar{justify-content:space-between;gap:8px}.entryActions button,.entryActions .button{white-space:normal}.moduleFilters #moduleQuery{width:min(310px,75vw)}.sourceCards{gap:10px}.toolbar{padding:18px}.ledgerFilters{padding:14px 18px}}
 @media(prefers-reduced-motion:reduce){button,.button{transition:none}}
+
+.reviewCard .reviewIssues{color:#9a526c}.matchcard button:disabled{opacity:.45}.badge.partial{background:#fff0e6;color:#956a43}
