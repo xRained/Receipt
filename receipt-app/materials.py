@@ -175,7 +175,6 @@ def install(app,get_data,db,records,cents):
             # is a module default rather than an inferred tax/accounting choice.
             account=c.execute("SELECT title FROM accounts WHERE code='CS-0001'").fetchone()
             draft.update(collection='Material Expense' if mode=='payment' else 'Cash Voucher',receipt_month=month if mode=='receipt' else '',code='CS-0001',account=account['title'] if account else 'Materials')
-            if mode=='payment' and draft['method']=='Bank':draft['method']='Online Payment'
             if b.get('image'):c.execute('UPDATE documents SET text=? WHERE image=?',(b.get('text',''),b['image']))
             return jsonify(draft=draft,warnings=warnings,duplicates=duplicates(draft,rs))
 
