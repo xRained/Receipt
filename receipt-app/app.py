@@ -98,11 +98,11 @@ def records(c):
 def auto_match():
     with db() as c:
         workflow=c.execute("SELECT value FROM workspace_settings WHERE key='workflow'").fetchone()
-        if workflow and workflow['value'] in ['online_material_receipt_presence','materials_intake_receipt_presence']:return {'links':0,'payments':0,'amount':0,'note':'Receipt presence only; no payment allocations'}
+        if workflow and workflow['value']=='online_material_receipt_presence':return {'links':0,'payments':0,'amount':0,'note':'Receipt presence only; no payment allocations'}
         c.execute('BEGIN IMMEDIATE')
         blocked = [tuple(r) for r in c.execute('SELECT payment,receipt FROM match_blocks')]
         aliases = [tuple(r) for r in c.execute('SELECT payment_identity,receipt_identity FROM supplier_aliases')]
-        planned = plan_matches(records(c), blocked, aliases)
+        planned = plan_matches(records(c), blocked, aliases, require_identifiers=True)
         for a in planned:
             c.execute('INSERT INTO allocations VALUES(?,?,?) ON CONFLICT(payment,receipt) DO UPDATE SET cents=cents+excluded.cents', (a['payment'],a['receipt'],a['cents']))
             c.execute('INSERT OR REPLACE INTO match_audit(payment,receipt,reason) VALUES(?,?,?)', (a['payment'],a['receipt'],a['reason']))

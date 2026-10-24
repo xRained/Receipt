@@ -66,4 +66,13 @@ class MatchingTests(unittest.TestCase):
         self.assertEqual(sum(r['cents'] for r in matches),30000)
 
 
-if __name__=='__main__':unittest.main()
+
+
+    def test_strict_allocations_require_identifier_supplier_and_amount(self):
+        p=row('p','payment',100,reference='PC-EXAMPLE-001')
+        r=row('r','receipt',100,reference='PC-EXAMPLE-001')
+        self.assertEqual(len(plan_matches([p,r],require_identifiers=True)),1)
+        r['reference']='DIFFERENT'
+        self.assertEqual(plan_matches([p,r],require_identifiers=True),[])
+        r['reference']=p['reference'];r['remaining']=99
+        self.assertEqual(plan_matches([p,r],require_identifiers=True),[])

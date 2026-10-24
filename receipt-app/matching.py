@@ -1,12 +1,18 @@
 """Conservative deterministic matching; amounts alone never identify a supplier."""
 import re
 from collections import defaultdict
+from functools import lru_cache
 from decimal import Decimal
 from difflib import SequenceMatcher
 
 
 def norm(value):
-    return re.sub(r'[^a-z0-9]', '', str(value or '').lower())
+    return _normalized(str(value or ''))
+
+
+@lru_cache(maxsize=16384)
+def _normalized(value):
+    return re.sub(r'[^a-z0-9]', '', value.lower())
 
 
 def number(value):
@@ -48,22 +54,28 @@ def centavos(value):
     return int((Decimal(str(value)) * 100).quantize(Decimal('1')))
 
 
-def plan_matches(rows, blocked=(), aliases=()):
+def plan_matches(rows, blocked=(), aliases=(), require_identifiers=False):
     """Return only mutually unique exact matches and explicit receipt groups.
 
     Partial groups require a shared receipt number and a sum equal to the
     receipt balance. Guessing subsets of equal-looking payments is avoided.
     """
     blocked = set(blocked)
-    payments = [r for r in rows if r['kind'] == 'payment' and centavos(r['remaining']) > 0]
+    payments = [r for r in rows if r['kind'] == 'payment' and centavos(r['remaining']) > 0 and not r.get('personal') and r.get('treatment')!='personal']
     receipts = [r for r in rows if r['kind'] == 'receipt' and centavos(r['remaining']) > 0
                 and r.get('collection') != 'Non Receipt' and not r.get('personal')]
     remaining = {r['id']: centavos(r['remaining']) for r in payments + receipts}
     plans = []
 
+    def identifiers(row):
+        return receipt_numbers(row)|({number(row.get('reference'))} if number(row.get('reference')) else set())
+
     def eligible(p, r):
         if (p['id'], r['id']) in blocked or not same_supplier(p, r, aliases):
             return False
+        if require_identifiers:
+            if tin(p.get('tin')) and tin(r.get('tin')) and tin(p.get('tin'))!=tin(r.get('tin')):return False
+            if not identifiers(p)&identifiers(r):return False
         pn, rn = receipt_numbers(p), receipt_numbers(r)
         return not (pn and rn and pn.isdisjoint(rn))
 
@@ -113,10 +125,12 @@ def plan_matches(rows, blocked=(), aliases=()):
     # directions. Repeated amounts, contradictory TINs and receipt numbers
     # remain for manual review. Dates are deliberately not restricted by month.
     candidates = []
+    receipts_by_amount=defaultdict(list)
+    for r in receipts:receipts_by_amount[remaining[r['id']]].append(r)
     for p in payments:
         if not remaining[p['id']]:
             continue
-        for r in receipts:
+        for r in receipts_by_amount[remaining[p['id']]]:
             if remaining[r['id']] == remaining[p['id']] and eligible(p, r):
                 candidates.append((p, r))
     pc, rc = defaultdict(int), defaultdict(int)

@@ -21,9 +21,10 @@ def health():
 
 def main():
     from version import version
+    expected_version=version()
     current=health()
     if current and current.get('app')=='tally-local' and current.get('workspace')==str(ROOT):
-        if current.get('version')==version():webbrowser.open(URL);return
+        if current.get('version')==expected_version:webbrowser.open(URL);return
         pidfile=ROOT/'data'/'server.pid'
         if pidfile.exists() and int(pidfile.read_text())==current.get('pid'):
             os.kill(current['pid'],signal.SIGTERM)
@@ -35,7 +36,7 @@ def main():
         subprocess.Popen([sys.executable,str(ROOT/'app.py')],cwd=ROOT,stdout=out,stderr=err,creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
     for _ in range(100):
         current=health()
-        if current and current.get('version')==version():webbrowser.open(URL);return
+        if current and current.get('version')==expected_version:webbrowser.open(URL);return
         time.sleep(.2)
     raise RuntimeError('The server did not start. See data/server-error.log.')
 

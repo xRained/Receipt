@@ -252,3 +252,14 @@ class ReviewApiTests(unittest.TestCase):
                 c.execute("UPDATE records SET body=? WHERE id='refr'",(json.dumps(changed),))
             self.assertEqual(module.app.refresh_material_presence(),0)
             with module.db() as c:c.execute("UPDATE records SET body=? WHERE id='refr'",(json.dumps(original),))
+
+    def test_auto_allocation_uses_strict_rule_in_current_workflow(self):
+        with module.db() as c:
+            c.execute("INSERT OR REPLACE INTO workspace_settings VALUES('workflow','materials_intake_receipt_presence')")
+            for rid,kind in [('allocp','payment'),('allocr','receipt')]:
+                body=dict(company='Example allocation supplier',amount=100,settlement_amount=100,reference='PC-ALLOC-001',collection='Material Expense' if kind=='payment' else 'Cash Voucher',code='CS-0001',receipt_month='2026-09')
+                c.execute('INSERT INTO records VALUES(?,?,?,?,?)',(rid,kind,json.dumps(body),'Example',None))
+        self.assertEqual(self.client.post('/api/auto-match',json={}).get_json()['links'],1)
+        self.assertEqual(self.client.post('/api/auto-match',json={}).get_json()['links'],0)
+        with module.db() as c:
+            self.assertEqual(c.execute("SELECT cents FROM allocations WHERE payment='allocp' AND receipt='allocr'").fetchone()[0],10000)

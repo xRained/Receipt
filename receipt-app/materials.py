@@ -114,9 +114,15 @@ def install(app,get_data,db,records,cents):
             manual={tuple(r) for r in c.execute('SELECT payment,receipt FROM presence_links')}
             def identifiers(row):
                 return {norm(value) for value in receipt_numbers(row)|{str(row.get('reference') or '')} if norm(value)}
+            from collections import defaultdict
+            by_identifier=defaultdict(dict)
+            for r in rs:
+                for key in identifiers(r):by_identifier[key][r['id']]=r
             candidates=[]
             for p in ps:
-                for r in rs:
+                matching={}
+                for key in identifiers(p):matching.update(by_identifier.get(key,{}))
+                for r in matching.values():
                     pair=(p['id'],r['id'])
                     if pair in blocked or any(pid==p['id'] or rid==r['id'] for pid,rid in manual):continue
                     pt,rt=tin(p.get('tin')),tin(r.get('tin'))

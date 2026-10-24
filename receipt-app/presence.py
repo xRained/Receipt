@@ -30,9 +30,9 @@ def compare(payments,vouchers,account='CS-0001',confirmed=(),dismissed=()):
             if pair in dismissed:continue
             exact=bool(pn & receipt_numbers(r));manual=pair in confirmed
             identity=same_identity(p,r)
-            similarity=0 if exact or manual or identity else SequenceMatcher(None,norm(p.get('company')),norm(r.get('company'))).ratio()
             amount_delta=round(float(r.get('settlement_amount',r['amount']))-float(p['amount']),2)
             amount_close=abs(amount_delta)<=1 or abs(float(r['amount'])-float(p['amount']))<=1
+            similarity=SequenceMatcher(None,norm(p.get('company')),norm(r.get('company'))).ratio() if amount_close and not (exact or manual or identity) else 0
             if not (exact or manual or identity or (similarity>=.65 and amount_close)):continue
             reasons=[]
             if manual:reasons.append('Manually confirmed same receipt')
