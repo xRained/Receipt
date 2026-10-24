@@ -67,7 +67,7 @@ def install(app,db,records):
             month=month or (scope['value'] if scope else '2026-09')
             ps=[r for r in allrows if material_payment(r) and (not payment_month or r.get('date','').startswith(payment_month)) and (not method or method=='all' or (online_material(r) if method=='online' else norm(r.get('method'))==norm(method)))]
             rs=[r for r in allrows if cash_voucher(r) and (r.get('receipt_month') or month)==month]
-            confirmed=[tuple(r) for r in c.execute('SELECT payment,receipt FROM presence_links')]
+            confirmed=[tuple(r) for r in c.execute('SELECT payment,receipt FROM presence_links UNION SELECT payment,receipt FROM allocations')]
             automatic={(r['payment'],r['receipt']) for r in c.execute("SELECT payment,receipt FROM presence_links WHERE match_kind='automatic'")}
             dismissed=[tuple(r) for r in c.execute('SELECT payment,receipt FROM presence_dismissals')]
         rows,selected=compare(ps,rs,account,confirmed,dismissed)
@@ -76,7 +76,9 @@ def install(app,db,records):
                 if (row['payment']['id'],candidate['receipt']['id']) in automatic:
                     candidate['confirmed']=False;candidate['automatic']=True
                     candidate['reasons']=[reason for reason in candidate['reasons'] if reason!='Manually confirmed same receipt']
-                    candidate['reasons'].insert(0,'Automatically confirmed: same reference or S.I.#, company/TIN and exact company amount')
+                    candidate['reasons'].insert(0,'Automatically confirmed: unique company/TIN and exact company amount; S.I.# filled from receipt')
+        for row in rows:
+            row['payment']['matched_receipt_numbers']=', '.join(dict.fromkeys(c['receipt'].get('receipt_no','') for c in row['candidates']+row['other_accounts'] if c.get('automatic') or c.get('confirmed')))
         choices=sorted({(r.get('code',''),r.get('account','')) for r in rs},key=lambda a:a[1])
         if not any(code=='CS-0001' for code,title in choices):choices.insert(0,('CS-0001','Materials'))
         return dict(rows=rows,vouchers=selected,accounts=[dict(code=k,title=v) for k,v in choices],

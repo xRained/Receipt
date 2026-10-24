@@ -115,21 +115,21 @@ def install(app,get_data,db,records,cents):
             def identifiers(row):
                 return {norm(value) for value in receipt_numbers(row)|{str(row.get('reference') or '')} if norm(value)}
             from collections import defaultdict
-            by_identifier=defaultdict(dict)
+            by_amount=defaultdict(dict)
             for r in rs:
-                for key in identifiers(r):by_identifier[key][r['id']]=r
+                for amount in {cents(r['amount']),cents(r.get('settlement_amount',r['amount']))}:by_amount[amount][r['id']]=r
             candidates=[]
             for p in ps:
-                matching={}
-                for key in identifiers(p):matching.update(by_identifier.get(key,{}))
-                for r in matching.values():
+                for r in by_amount.get(cents(p['amount']),{}).values():
                     pair=(p['id'],r['id'])
                     if pair in blocked or any(pid==p['id'] or rid==r['id'] for pid,rid in manual):continue
                     pt,rt=tin(p.get('tin')),tin(r.get('tin'))
                     if pt and rt and pt!=rt:continue
                     same=bool((pt and pt==rt) or (norm(p['company']) and norm(p['company'])==norm(r['company'])))
                     amount_same=cents(p['amount']) in {cents(r['amount']),cents(r.get('settlement_amount',r['amount']))}
-                    if same and amount_same and identifiers(p)&identifiers(r):candidates.append(pair)
+                    pn,rn=receipt_numbers(p),receipt_numbers(r)
+                    if pn and rn and pn.isdisjoint(rn):continue
+                    if same and amount_same:candidates.append(pair)
             from collections import Counter
             pc=Counter(p for p,r in candidates);rc=Counter(r for p,r in candidates)
             accepted=[(p,r) for p,r in candidates if pc[p]==1 and rc[r]==1]
@@ -195,7 +195,7 @@ def install(app,get_data,db,records,cents):
             allrows=records(c);byid={r['id']:r for r in allrows}
             rows=[r for r in allrows if material_payment(r) and (not month or r.get('date','').startswith(month)) and (not method or norm(r.get('method'))==norm(method))]
             links=list(c.execute('SELECT payment,receipt FROM presence_links'))
-            for r in rows:r['matched_receipt_numbers']=', '.join(dict.fromkeys(byid[link['receipt']].get('receipt_no','') for link in links if link['payment']==r['id']))
+            for r in rows:r['matched_receipt_numbers']=', '.join(dict.fromkeys(byid[link['receipt']].get('receipt_no','') for link in links if link['payment']==r['id'])) or r.get('linked_receipt_numbers','')
         return jsonify(rows=sorted(rows,key=lambda r:r.get('date','')),modes=PAYMENT_MODES)
 
     @app.post('/api/materials/enrich')

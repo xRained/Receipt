@@ -240,13 +240,13 @@ class ReviewApiTests(unittest.TestCase):
                 self.assertFalse(next(c for c in row['candidates'] if c['receipt']['id']=='exactr').get('automatic',False))
         with module.db() as c:self.assertEqual(c.execute('SELECT COUNT(*) FROM allocations').fetchone()[0],0)
 
-    def test_auto_link_reference_identity_and_amount_all_required(self):
+    def test_auto_link_identity_and_amount_required(self):
         with module.db() as c:
             for rid,kind,reference,amount,tin in [('refp','payment','PC-EXAMPLE-001',100,'123-456-789'),('refr','receipt','PC-EXAMPLE-001',100,'123-456-789')]:
                 body=dict(company='Example reference supplier',amount=amount,reference=reference,tin=tin,collection='Material Expense' if kind=='payment' else 'Cash Voucher',code='CS-0001',receipt_month='2026-09')
                 c.execute('INSERT INTO records VALUES(?,?,?,?,?)',(rid,kind,json.dumps(body),'Example',None))
         self.assertEqual(module.app.refresh_material_presence(),1)
-        for field,value in [('amount',101),('tin','987-654-321'),('reference','OTHER-REFERENCE')]:
+        for field,value in [('amount',101),('tin','987-654-321')]:
             with module.db() as c:
                 original=json.loads(c.execute("SELECT body FROM records WHERE id='refr'").fetchone()[0]);changed=dict(original);changed[field]=value
                 c.execute("UPDATE records SET body=? WHERE id='refr'",(json.dumps(changed),))
@@ -263,3 +263,23 @@ class ReviewApiTests(unittest.TestCase):
         self.assertEqual(self.client.post('/api/auto-match',json={}).get_json()['links'],0)
         with module.db() as c:
             self.assertEqual(c.execute("SELECT cents FROM allocations WHERE payment='allocp' AND receipt='allocr'").fetchone()[0],10000)
+
+    def test_unique_supplier_amount_fills_si_and_duplicate_stays_review(self):
+        with module.db() as c:
+            c.execute("INSERT OR REPLACE INTO workspace_settings VALUES('workflow','materials_intake_receipt_presence')")
+            for rid,kind,si in [('uniquep','payment',''),('uniquer','receipt','SI-UNIQUE-001')]:
+                body=dict(company='Example unique supplier',amount=123.45,settlement_amount=123.45,receipt_no=si,collection='Material Expense' if kind=='payment' else 'Cash Voucher',code='CS-0001',receipt_month='2026-09')
+                c.execute('INSERT INTO records VALUES(?,?,?,?,?)',(rid,kind,json.dumps(body),'Example',None))
+        self.assertEqual(module.app.refresh_material_presence(),1)
+        self.assertEqual(module.auto_match()['links'],1)
+        entry=next(r for r in self.client.get('/api/materials/entries').get_json()['rows'] if r['id']=='uniquep')
+        self.assertEqual(entry['matched_receipt_numbers'],'SI-UNIQUE-001')
+        self.assertEqual(entry['remaining'],0)
+        with module.db() as c:
+            for rid,kind,si in [('ambp','payment',''),('ambr1','receipt','SI-A'),('ambr2','receipt','SI-B')]:
+                body=dict(company='Example ambiguous supplier',amount=200,receipt_no=si,collection='Material Expense' if kind=='payment' else 'Cash Voucher',code='CS-0001',receipt_month='2026-09')
+                c.execute('INSERT INTO records VALUES(?,?,?,?,?)',(rid,kind,json.dumps(body),'Example',None))
+        self.assertEqual(module.auto_match()['links'],0)
+        module.app.refresh_material_presence()
+        row=next(r for r in self.client.get('/api/materials-presence').get_json()['rows'] if r['payment']['id']=='ambp')
+        self.assertEqual(row['status'],'review')

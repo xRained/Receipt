@@ -71,6 +71,7 @@ def plan_matches(rows, blocked=(), aliases=(), require_identifiers=False):
         return receipt_numbers(row)|({number(row.get('reference'))} if number(row.get('reference')) else set())
 
     def eligible(p, r):
+        if tin(p.get('tin')) and tin(r.get('tin')) and tin(p.get('tin'))!=tin(r.get('tin')):return False
         if (p['id'], r['id']) in blocked or not same_supplier(p, r, aliases):
             return False
         if require_identifiers:
