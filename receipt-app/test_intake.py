@@ -19,3 +19,16 @@ class PaymentExtractionTests(unittest.TestCase):
         draft, warnings = extract("GCash\nTransaction Successful", "payment")
         self.assertEqual(draft["reference"], "")
         self.assertIn("Missing reference", warnings)
+
+    def test_spaced_gcash_reference_beside_timestamp(self):
+        text="Sent via GCash\nAmount 25,133.48\nRef No. 1234 567 890123    Oct 23, 2026 10:48 AM"
+        draft, _ = extract(text, 'payment')
+        self.assertEqual(draft['reference'], '1234567890123')
+        self.assertEqual(draft['method'], 'GCash')
+        self.assertEqual(draft['amount'], '25133.48')
+        self.assertEqual(draft['date'], '2026-10-23')
+
+    def test_phone_number_is_not_gcash_reference(self):
+        draft, warnings = extract('GCash\n+63 917 123 4567\nOct 23, 2026', 'payment')
+        self.assertEqual(draft['reference'], '')
+        self.assertIn('Missing reference', warnings)

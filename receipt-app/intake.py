@@ -21,6 +21,11 @@ def extract(text, mode='auto', suppliers=(), history=()):
             if match:
                 draft[field]=match.group(1).strip();return
     find('reference',[r'\b(?:reference|ref\.?)(?:\s*(?:number|no\.?|id))?\s*[:#]?\s*([A-Z0-9][A-Z0-9-]{5,})',r'\btransaction\s*(?:number|no\.?|id|#)\s*[:#]?\s*([A-Z0-9][A-Z0-9-]{5,})',r'(?:cheque|check)\s*(?:no\.?|number|#)\s*[:#]?\s*([A-Z0-9-]{3,})'])
+    if gcash:
+        # GCash displays its 13-digit reference in groups, often beside a date.
+        # Read only labeled digits; never substitute a phone number or date.
+        match=re.search(r'\b(?:reference|ref\.?)(?:\s*(?:number|no\.?|id))?\s*[:#]?\s*(\d(?:[ \t\u00a0]*\d){12})(?![\d])',text,re.I)
+        if match:draft['reference']=re.sub(r'\s','',match.group(1))
     find('receipt_no',[r'(?:sales\s+invoice|service\s+invoice|invoice|receipt|S\.?I\.?)\s*(?:no\.?|number|#)\s*[:#]?\s*([A-Z0-9-]+)'])
     find('tin',[r'\b(\d{3}[- ]\d{3}[- ]\d{3}(?:[- ]\d{3})?)\b'])
     amount=r'(?:PHP|P|₱)?\s*([0-9][0-9,]*(?:\.\d{2})?)(?![\d.])'
