@@ -15,3 +15,5 @@ venv/
 *.zip
 *.log
 EXCEL_WORKFLOW_AUDIT.md
+
+!seed-data/workspace.zip

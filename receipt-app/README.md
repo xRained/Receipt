@@ -1,3 +1,5 @@
+A bundled workspace snapshot is included in `seed-data/workspace.zip`. On a fresh local installation, starting the app restores its records, images and workbook templates automatically. Existing `data/receipts.sqlite3` files are preserved. This snapshot does not synchronize later changes between computers. Hosted previews do not restore it.
+
 The workspace uses the supplied company logo and a lavender theme. Live updates check a lightweight database revision every four seconds while the tab is visible. Changed records refresh without a page reload; search filters remain selected, and open drafts defer refresh until closed. Refresh data is also available at the top of each screen. No external font download is required.
 
 # Jolyn TAE workbook workspace

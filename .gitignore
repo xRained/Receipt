@@ -11,3 +11,5 @@
 *.db
 *.zip
 *.log
+
+!receipt-app/seed-data/workspace.zip
