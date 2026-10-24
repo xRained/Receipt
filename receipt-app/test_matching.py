@@ -76,3 +76,13 @@ class MatchingTests(unittest.TestCase):
         self.assertEqual(plan_matches([p,r],require_identifiers=True),[])
         r['reference']=p['reference'];r['remaining']=99
         self.assertEqual(plan_matches([p,r],require_identifiers=True),[])
+
+    def test_shared_si_exact_total_allows_different_payee_and_proprietor(self):
+        p1=row('p1','payment',15120,receipt_no='35522')
+        p2=row('p2','payment',1120,receipt_no='35522')
+        r=row('r','receipt',16240,receipt_no='35522');r['company']='Different legal proprietor'
+        self.assertEqual(len(plan_matches([p1,p2,r],allow_si_groups=True)),2)
+        duplicate=dict(r,id='r2')
+        self.assertEqual(plan_matches([p1,p2,r,duplicate],allow_si_groups=True),[])
+        p1['tin']='123-456-789';r['tin']='987-654-321'
+        self.assertEqual(plan_matches([p1,p2,r],allow_si_groups=True),[])

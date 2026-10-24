@@ -34,3 +34,24 @@ def remember_from_record(c,body):
     c.execute('INSERT OR IGNORE INTO suppliers VALUES(?,?,?)',(name,str(body.get('tin','')),str(body.get('address',''))))
     c.execute('INSERT INTO supplier_profiles VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET business_name=excluded.business_name,proprietor=excluded.proprietor',(name,business,proprietor))
     return True
+
+
+def learn_from_supplier_tins(c):
+    """Link proprietor/trading-name masters only when a TIN has one business."""
+    from matching import tin
+    groups={}
+    for row in c.execute('SELECT * FROM suppliers'):
+        key=tin(row['tin'])
+        if key:groups.setdefault(key,[]).append(dict(row))
+    count=0
+    for rows in groups.values():
+        businesses={norm(r['name']):r['name'] for r in rows if not re.search(r'\bprop(?:rietor)?\.?$',r['name'],re.I)}
+        if len(businesses)!=1:continue
+        business=next(iter(businesses.values()))
+        for row in rows:
+            if not re.search(r'\s*-\s*prop(?:rietor)?\.?$',row['name'],re.I):continue
+            old=c.execute('SELECT business_name FROM supplier_profiles WHERE name=?',(row['name'],)).fetchone()
+            if old and old['business_name']:continue
+            proprietor=re.sub(r'\s*-\s*prop(?:rietor)?\.?$','',row['name'],flags=re.I).strip()
+            c.execute('INSERT INTO supplier_profiles VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET business_name=excluded.business_name,proprietor=excluded.proprietor',(row['name'],business,proprietor));count+=1
+    return count

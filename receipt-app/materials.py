@@ -1,5 +1,5 @@
 """Material Expense entry, shared reference data and monthly voucher intake."""
-from supplier_profiles import suppliers as supplier_rows
+from supplier_profiles import suppliers as supplier_rows, learn_from_supplier_tins
 import io
 import json
 import re
@@ -173,10 +173,13 @@ def install(app,get_data,db,records,cents):
                 rid=uuid.uuid4().hex
                 c.execute('INSERT INTO records VALUES(?,?,?,?,?)',(rid,item['kind'],json.dumps(b),item['source'],item['source_row']))
                 existing.append(dict(b,id=rid,kind=item['kind']));imported+=1
+        with db() as c:learn_from_supplier_tins(c)
         matched=refresh_matches()
-        return dict(imported=imported,skipped=skipped,conflicts=conflicts,supplier_rows=suppliers,account_rows=len(ac),automatic_receipt_links=matched)
+        allocation=app.auto_allocate() if hasattr(app,'auto_allocate') else {}
+        return dict(matching=allocation,imported=imported,skipped=skipped,conflicts=conflicts,supplier_rows=suppliers,account_rows=len(ac),automatic_receipt_links=matched)
     app.import_material_snapshot=save_snapshot
 
+    with db() as c:learn_from_supplier_tins(c)
     restore_shared_dates(get_data(),db)
     refresh_matches()
 

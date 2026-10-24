@@ -1,5 +1,5 @@
 """Working modules corresponding to all fourteen original workbook sheets."""
-from supplier_profiles import suppliers as supplier_rows
+from supplier_profiles import suppliers as supplier_rows, learn_from_supplier_tins
 import json
 import re
 from collections import defaultdict
@@ -136,6 +136,7 @@ def install(app,db,records,cents):
             if original and original!=name:c.execute('UPDATE supplier_profiles SET name=? WHERE name=?',(name,original))
             if 'business_name' in b or 'proprietor' in b:
                 c.execute('INSERT INTO supplier_profiles VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET business_name=excluded.business_name,proprietor=excluded.proprietor',(name,str(b.get('business_name','')).strip(),str(b.get('proprietor','')).strip()))
+        with db() as c:learn_from_supplier_tins(c)
         linked=app.refresh_material_presence() if hasattr(app,'refresh_material_presence') else 0
         allocation=app.auto_allocate() if hasattr(app,'auto_allocate') else {}
         return jsonify(ok=True,automatic_receipt_links=linked,matching=allocation)

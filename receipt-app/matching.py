@@ -56,7 +56,7 @@ def centavos(value):
     return int((Decimal(str(value)) * 100).quantize(Decimal('1')))
 
 
-def plan_matches(rows, blocked=(), aliases=(), require_identifiers=False):
+def plan_matches(rows, blocked=(), aliases=(), require_identifiers=False, allow_si_groups=False):
     """Return only mutually unique exact matches and explicit receipt groups.
 
     Partial groups require a shared receipt number and a sum equal to the
@@ -108,7 +108,12 @@ def plan_matches(rows, blocked=(), aliases=(), require_identifiers=False):
         rn = receipt_numbers(r)
         if not rn:
             continue
-        ps = [p for p in payments if remaining[p['id']]>0 and eligible(p, r) and receipt_numbers(p) & rn]
+        def si_eligible(p):
+            if (p['id'],r['id']) in blocked:return False
+            pt,rt=tin(p.get('tin')),tin(r.get('tin'))
+            if pt and rt and pt!=rt:return False
+            return eligible(p,r) or allow_si_groups
+        ps = [p for p in payments if remaining[p['id']]>0 and si_eligible(p) and receipt_numbers(p) & rn]
         if ps and sum(remaining[p['id']] for p in ps) == remaining[r['id']]:
             groups.append((r, ps))
     uses = defaultdict(int)
@@ -120,7 +125,7 @@ def plan_matches(rows, blocked=(), aliases=(), require_identifiers=False):
             for p in ps:
                 amount = remaining[p['id']]
                 plans.append(dict(payment=p['id'], receipt=r['id'], cents=amount,
-                                  reason='Same supplier and receipt number; payment group equals receipt balance'))
+                                  reason='Shared S.I.#; payment group exactly equals receipt balance; no conflicting TIN'))
                 remaining[p['id']] = 0
                 remaining[r['id']] -= amount
 

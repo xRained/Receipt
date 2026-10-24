@@ -104,7 +104,7 @@ def auto_match():
         c.execute('BEGIN IMMEDIATE')
         blocked = [tuple(r) for r in c.execute('SELECT payment,receipt FROM match_blocks')]
         aliases = [tuple(r) for r in c.execute('SELECT payment_identity,receipt_identity FROM supplier_aliases')]
-        planned = plan_matches(records(c), blocked, aliases)
+        planned = plan_matches(records(c), blocked, aliases, allow_si_groups=True)
         for a in planned:
             c.execute('INSERT INTO allocations VALUES(?,?,?) ON CONFLICT(payment,receipt) DO UPDATE SET cents=cents+excluded.cents', (a['payment'],a['receipt'],a['cents']))
             c.execute('INSERT OR REPLACE INTO match_audit(payment,receipt,reason) VALUES(?,?,?)', (a['payment'],a['receipt'],a['reason']))

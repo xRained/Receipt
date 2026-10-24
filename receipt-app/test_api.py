@@ -177,7 +177,7 @@ class ReviewApiTests(unittest.TestCase):
         self.assertEqual(upload().get_json()['imported'],0)
         entries=self.client.get('/api/materials/entries').get_json()['rows']
         self.assertEqual(next(r for r in entries if r['id']==pid)['matched_receipt_numbers'],'INV-TEST-001')
-        with module.db() as c:self.assertEqual(c.execute('SELECT COUNT(*) FROM allocations').fetchone()[0],0)
+        with module.db() as c:self.assertEqual(c.execute('SELECT SUM(cents) FROM allocations WHERE payment=?',(pid,)).fetchone()[0],100000)
         # A recurring monthly filename/sheet must not collide with prior months.
         november=self.client.post('/api/materials/import',data={'kind':'vouchers','month':'2026-11','file':(io.BytesIO(content),'October.xlsx')},content_type='multipart/form-data')
         self.assertEqual(november.status_code,200,november.data)
@@ -259,7 +259,7 @@ class ReviewApiTests(unittest.TestCase):
             for rid,kind in [('allocp','payment'),('allocr','receipt')]:
                 body=dict(company='Example allocation supplier',amount=100,settlement_amount=100,reference='PC-ALLOC-001',collection='Material Expense' if kind=='payment' else 'Cash Voucher',code='CS-0001',receipt_month='2026-09')
                 c.execute('INSERT INTO records VALUES(?,?,?,?,?)',(rid,kind,json.dumps(body),'Example',None))
-        self.assertEqual(self.client.post('/api/auto-match',json={}).get_json()['links'],1)
+        self.assertEqual(self.client.post('/api/auto-match',json={}).get_json()['links'],3)
         self.assertEqual(self.client.post('/api/auto-match',json={}).get_json()['links'],0)
         with module.db() as c:
             self.assertEqual(c.execute("SELECT cents FROM allocations WHERE payment='allocp' AND receipt='allocr'").fetchone()[0],10000)
@@ -271,7 +271,7 @@ class ReviewApiTests(unittest.TestCase):
                 body=dict(company='Example unique supplier',amount=123.45,settlement_amount=123.45,receipt_no=si,collection='Material Expense' if kind=='payment' else 'Cash Voucher',code='CS-0001',receipt_month='2026-09')
                 c.execute('INSERT INTO records VALUES(?,?,?,?,?)',(rid,kind,json.dumps(body),'Example',None))
         self.assertEqual(module.app.refresh_material_presence(),1)
-        self.assertEqual(module.auto_match()['links'],1)
+        self.assertEqual(module.auto_match()['links'],3)
         entry=next(r for r in self.client.get('/api/materials/entries').get_json()['rows'] if r['id']=='uniquep')
         self.assertEqual(entry['matched_receipt_numbers'],'SI-UNIQUE-001')
         self.assertEqual(entry['remaining'],0)
@@ -308,9 +308,17 @@ class ReviewApiTests(unittest.TestCase):
             c.execute('INSERT INTO records VALUES(?,?,?,?,?)',('learnp','payment',json.dumps(body),'Example',None))
         response=self.client.post('/api/record',json=dict(kind='receipt',company='Example New Owner - Prop.',business_name='Example New Hardware',amount=444,collection='Cash Voucher',receipt_month='2026-09',receipt_no='SI-LEARN-1',code='CS-0001'))
         self.assertEqual(response.status_code,200,response.get_json())
-        self.assertEqual(response.get_json()['matching']['links'],1)
+        self.assertEqual(response.get_json()['matching']['links'],3)
         with module.db() as c:
             mapping=c.execute("SELECT * FROM supplier_profiles WHERE name='Example New Owner - Prop.'").fetchone()
             self.assertEqual(mapping['business_name'],'Example New Hardware')
         response=self.client.post('/api/materials/enrich',json={'company':'Example New Hardware'})
         self.assertEqual(response.get_json()['fields']['company'],'Example New Owner - Prop.')
+
+    def test_proprietor_company_learned_from_unique_taxpayer(self):
+        from supplier_profiles import learn_from_supplier_tins
+        with module.db() as c:
+            c.executemany('INSERT INTO suppliers VALUES(?,?,?)',[('Example Tax Owner - Prop.','987-111-222','Address'),('Example Tax Hardware','987-111-222-000','Address')])
+            self.assertGreaterEqual(learn_from_supplier_tins(c),1)
+            row=c.execute("SELECT business_name FROM supplier_profiles WHERE name='Example Tax Owner - Prop.'").fetchone()
+            self.assertEqual(row['business_name'],'Example Tax Hardware')
