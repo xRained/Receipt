@@ -28,24 +28,32 @@ def extract(text, mode='auto', suppliers=(), history=()):
         if match:draft['reference']=re.sub(r'\s','',match.group(1))
     find('receipt_no',[r'(?:sales\s+invoice|service\s+invoice|invoice|receipt|S\.?I\.?)\s*(?:no\.?|number|#)\s*[:#]?\s*([A-Z0-9-]+)'])
     find('tin',[r'\b(\d{3}[- ]\d{3}[- ]\d{3}(?:[- ]\d{3})?)\b'])
-    amount=r'(?:PHP|P|₱|\$)?\s*([0-9][0-9,]*(?:\.\d{2})?)(?![\d.])'
+    amount=r'(?:PHP|P|\u20b1|\$)?\s*([0-9][0-9,]*(?:\.\d{2})?)(?![\d.%])'
     patterns=([r'^\s*amount\s*(?:sent|transferred)?\s*[:\n]?\s*'+amount,r'^\s*(?:PHP|₱)\s*([0-9][0-9,]*\.\d{2})\s*$'] if kind=='payment' else [r'(?:grand\s+total|total\s+(?:amount|sales)|amount\s+due)\s*[:\n]?\s*'+amount])
-    find('amount',patterns+[r'^\s*total\s+amount\s+sent\s*[:\n]?\s*'+amount,r'^\s*total\s*[:\n]?\s*'+amount])
+    find('amount',patterns+[r'^\s*(?:invoice\s+total|gross\s+amount|VAT[ -]inclusive\s+(?:total|amount))\s*[:\n]?\s*'+amount,r'^\s*total\s+amount\s+sent\s*[:\n]?\s*'+amount,r'^\s*total\s*[:\n]?\s*'+amount])
     if draft['amount']:draft['amount']=draft['amount'].replace(',','')
-    for field,label in [('fee',r'(?:transfer\s+fee|service\s+(?:fee|charge)|fee)'),('withholding',r'(?:withholding(?:\s+tax)?|EWT)')]:
-        find(field,[label+r'\s*[:\n]?\s*'+amount])
+    for field,label in [('fee',r'(?:transfer\s+fee|service\s+(?:fee|charge)|fee)'),('withholding',r'(?:withholding(?:\s+tax)?|EWT|WHT)')]:
+        find(field,[label+r'\s*[:\n]?\s*(?:\d+(?:\.\d+)?\s*%\s*[:=-]?\s*)?'+amount])
         if isinstance(draft[field],str):draft[field]=draft[field].replace(',','')
     match=re.search(r'\b(20\d{2})[-/](\d{1,2})[-/](\d{1,2})\b',text)
     if match:
         try:draft['date']=datetime(*map(int,match.groups())).date().isoformat()
         except ValueError:pass
     else:
-        match=re.search(r'\b([A-Za-z]{3,9}\s+\d{1,2},?\s+20\d{2})\b',text)
+        match=re.search(r'\b([A-Za-z]{3,9})\s+(\d{1,2})\s*,?\s*(20\d{2})\b',text)
         if match:
+            normalized_date=' '.join(match.groups())
             for fmt in ['%b %d %Y','%B %d %Y']:
-                try:draft['date']=datetime.strptime(match.group(1).replace(',',''),fmt).date().isoformat();break
+                try:draft['date']=datetime.strptime(normalized_date,fmt).date().isoformat();break
                 except ValueError:pass
-    find('company',[r'(?:sent\s+to|paid\s+to|recipient|payee|company)\s*[:\n]\s*([^\n]+)'])
+    find('company',[r'^(?:supplier|vendor|seller|company)\s*(?:name)?\s*[:\n]\s*([^\n]+)',r'(?:sent\s+to|paid\s+to|recipient|payee|company)\s*[:\n]\s*([^\n]+)'])
+    find('address',[r'^(?:supplier\s+|vendor\s+|seller\s+)?address\s*[:\n]\s*([^\n]+)'])
+    find('project',[r'^(?:project|site\s+location)\s*[:\n]\s*([^\n]+)'])
+    find('remarks',[r'^(?:description|remarks|particulars)\s*[:\n]\s*([^\n]+)'])
+    find('code',[r'^\s*(?:account\s+code|COA(?:\s+code)?)\s*[:#]?\s*([A-Z]+-\d{4})\b'])
+    find('account',[r'^\s*account\s+title\s*[:\n]\s*([^\n]+)'])
+    find('tax_tag',[r'^\s*tax\s+tag\s*[:\n]\s*(PG|PS|EX)\b'])
+    if draft.get('tax_tag'):draft['tax_tag']=draft['tax_tag'].upper()
     find('business_name',[r'^(?:company\s*/\s*trading\s+name|trading\s+name|business\s+name)\s*:\s*([^\n]+)'])
     owner=re.search(r'^([^\n]+?\s*-\s*Prop(?:rietor)?\.?)\s*$',text,re.I|re.M)
     if owner and draft.get('business_name'):draft['company']=owner.group(1).strip()
@@ -56,12 +64,12 @@ def extract(text, mode='auto', suppliers=(), history=()):
     by_name={norm(s['name']):s for s in candidates}
     if len(by_name)==1:
         supplier=next(iter(by_name.values()))
-        draft.update(company=supplier['name'],tin=draft['tin'] or supplier.get('tin',''),address=supplier.get('address',''),business_name=supplier.get('business_name',''),proprietor=supplier.get('proprietor',''))
+        draft.update(company=supplier['name'],tin=draft['tin'] or supplier.get('tin',''),address=draft['address'] or supplier.get('address',''),business_name=supplier.get('business_name',''),proprietor=supplier.get('proprietor',''))
     elif draft['company']:
         supplier=next((s for s in suppliers if norm(s['name'])==norm(draft['company'])),None)
         if supplier:draft.update(tin=draft['tin'] or supplier.get('tin',''),address=supplier.get('address',''),business_name=supplier.get('business_name',''),proprietor=supplier.get('proprietor',''))
     codes={r['code'] for r in history if r.get('code') and draft['company'] and same_supplier(draft,r)}
-    if len(codes)==1:
+    if len(codes)==1 and not draft['code']:
         draft['code']=next(iter(codes))
         draft['account']=next((r.get('account','') for r in history if r.get('code')==draft['code']), '')
     for regex,category in [(r'auto\s?sweep','Autosweep RFID'),(r'easy\s?trip','Easytrip'),(r'grab','Grab')]:
@@ -70,6 +78,7 @@ def extract(text, mode='auto', suppliers=(), history=()):
     warnings=[f'Missing {field.replace("_"," ")}' for field in required if not draft.get(field)]
     if re.search(r'\b\d{1,2}/\d{1,2}/20\d{2}\b',text) and not draft['date']:warnings.append('Numeric date is ambiguous; choose the date explicitly')
     if len(by_name)>1:warnings.append('Multiple supplier names share this evidence; verify legal supplier')
+    if payment:warnings.append('Payment evidence shows the amount sent; confirm the gross invoice total before applying VAT or withholding')
     warnings.append('Compare extracted digits with the document before saving')
     return draft,warnings
 

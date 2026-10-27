@@ -1,5 +1,9 @@
 A bundled workspace snapshot is included in `seed-data/workspace.zip`. On a fresh local installation, starting the app restores its records, images and workbook templates automatically. Existing `data/receipts.sqlite3` files are preserved. This snapshot does not synchronize later changes between computers. Hosted previews do not restore it.
 
+Paste a copied image with Ctrl+V on either workspace page or inside an open entry. OCR automatically fills recognized fields in an editable draft, including date, principal amount, payment method, reference, and supplier details when identifiable. The date parser accepts OCR dates such as `Oct 23,2026`. Review the image before saving; masked names and missing details require manual selection. The browser needs internet access to download its OCR engine and language data initially.
+
+PG and PS split 12% VAT from a VAT-inclusive principal into goods or services input VAT; EX records no input VAT. Selecting With withholding and Automatic calculates PG at 1% or PS at 2% of the VAT-exclusive base for qualifying purchases. Select Document amount for special cases or EX; No withholding applies no deduction. Fees and personal portions are excluded from tax calculations. Amount, tag, and withholding changes update the preview immediately and are recalculated on save. A payment screenshot shows money sent and does not establish the gross invoice total or tax eligibility.
+
 The workspace uses the supplied company logo and a lavender theme. Live updates check a lightweight database revision every four seconds while the tab is visible. Changed records refresh without a page reload; search filters remain selected, and open drafts defer refresh until closed. Refresh data is also available at the top of each screen. No external font download is required.
 
 # Jolyn TAE workbook workspace

@@ -235,8 +235,12 @@ def install(app,get_data,db,records,cents):
             draft,warnings=extract(b.get('text',''),mode,suppliers,rs)
             # This form is specifically the Material Expense input, so Materials
             # is a module default rather than an inferred tax/accounting choice.
-            account=c.execute("SELECT title FROM accounts WHERE code='CS-0001'").fetchone()
-            draft.update(collection='Material Expense' if mode=='payment' else 'Cash Voucher',receipt_month=month if mode=='receipt' else '',code='CS-0001',account=account['title'] if account else 'Materials')
+            code=draft.get('code') or 'CS-0001'
+            account=c.execute('SELECT title FROM accounts WHERE code=?',(code,)).fetchone()
+            if not account and code!='CS-0001':
+                warnings.append('Extracted account code is not in the COA; verify the selected account')
+                code='CS-0001';account=c.execute('SELECT title FROM accounts WHERE code=?',(code,)).fetchone()
+            draft.update(collection='Material Expense' if mode=='payment' else 'Cash Voucher',receipt_month=month if mode=='receipt' else '',code=code,account=account['title'] if account else 'Materials')
             if b.get('image'):c.execute('UPDATE documents SET text=? WHERE image=?',(b.get('text',''),b['image']))
             return jsonify(draft=draft,warnings=warnings,duplicates=duplicates(draft,rs))
 
@@ -262,9 +266,9 @@ def install(app,get_data,db,records,cents):
                 if not r.get('receipt_no'):r['receipt_no']=', '.join(dict.fromkeys(byid[a['receipt']].get('receipt_no','') for a in links if a['payment']==r['id']))
         w=openpyxl.Workbook();s=w.active;s.title='Material Expense'
         fields=['date','method','receipt_no','reference','company','remarks','tin','address','project','code','account','amount','fee']
-        s.append(['DATE','MODE OF PAYMENT','RECEIPT NO.','REF. NO','PAYEE','DESCRIPTION','TIN','ADDRESS','PROJECT','ACCOUNT CODE','ACCOUNT TITLE','AMOUNT','FEES','PAYABLE AMOUNT','FULL TRANSFER BEFORE FEES','PERSONAL PORTION EXCLUDED','PERSONAL NOTES'])
+        s.append(['DATE','MODE OF PAYMENT','RECEIPT NO.','REF. NO','PAYEE','DESCRIPTION','TIN','ADDRESS','PROJECT','ACCOUNT CODE','ACCOUNT TITLE','AMOUNT','FEES','PAYABLE AMOUNT','FULL TRANSFER BEFORE FEES','PERSONAL PORTION EXCLUDED','PERSONAL NOTES','TAX TAG','VAT-EXCLUSIVE BASE','INPUT VAT - GOODS','INPUT VAT - SERVICES','WITHHOLDING'])
         def safe(v):return "'"+v if isinstance(v,str) and v.startswith(('=','+','-','@')) else v
-        for r in sorted(rs,key=lambda r:r.get('date','')):s.append([safe(r.get(k,'')) for k in fields]+[(cents(r['amount'])+cents(r.get('fee')))/100,r.get('transfer_amount',r['amount']),r.get('personal_amount',0),safe(r.get('personal_note',''))])
+        for r in sorted(rs,key=lambda r:r.get('date','')):s.append([safe(r.get(k,'')) for k in fields]+[(cents(r.get('settlement_amount',r['amount']))+cents(r.get('fee')))/100,r.get('transfer_amount',r['amount']),r.get('personal_amount',0),safe(r.get('personal_note',''))]+[safe(r.get(k,'')) for k in ['tax_tag','net_tax_base','input_tax_goods','input_tax_services','withholding']])
         s.freeze_panes='A2';s.auto_filter.ref=s.dimensions
         for col in ['L','M','N']:
             for cell in s[col][1:]:cell.number_format='#,##0.00'

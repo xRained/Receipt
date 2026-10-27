@@ -133,7 +133,7 @@ class ReviewApiTests(unittest.TestCase):
         self.assertEqual({r['method'] for r in rows},{'Online Payment','Bank','GCash','Cheque','Cash'})
         response=self.client.get('/api/materials/export?month=2026-10')
         w=openpyxl.load_workbook(io.BytesIO(response.data),read_only=True,data_only=True)
-        self.assertEqual(w['Material Expense'].max_column,17)
+        self.assertEqual(w['Material Expense'].max_column,22)
         self.assertEqual(w['Material Expense']['N2'].value,105)
         w.close()
 

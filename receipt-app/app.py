@@ -16,6 +16,7 @@ from matching import plan_matches, review_matches, identity
 from workbooks import audit, normalized_receipts, account_entries
 from flask import Flask, jsonify, render_template, request, send_file, send_from_directory
 from version import version
+from vat import purchase_vat, automatic_withholding
 import os
 
 ROOT = Path(__file__).parent
@@ -281,6 +282,14 @@ def save():
     b = request.get_json()
     if b.get('kind') not in ['payment', 'receipt']: return jsonify(error='Choose payment or receipt'), 400
     if not str(b.get('company', '')).strip(): return jsonify(error='Company / payee is required'), 400
+    if 'withholding_status' in b:
+        if b['withholding_status'] not in ['yes','no']:
+            return jsonify(error='Choose with withholding or no withholding'),400
+        if b['withholding_status']=='no':b['withholding']=0
+        elif b.get('withholding_mode')!='auto':
+            try:
+                if cents(b.get('withholding'))<=0:raise ValueError('Enter the withholding amount from the document')
+            except ValueError as e:return jsonify(error=str(e)),400
     try:
         b['amount'] = cents(b.get('amount'))/100
         b['fee'] = cents(b.get('fee'))/100
@@ -326,15 +335,35 @@ def save():
             if existing:return jsonify(error='This document appears to belong to an existing entry. Attach the image to that entry instead.',duplicates=existing),409
         body = json.loads(old['body']) if old else {}
         body.update({k:v for k,v in b.items() if k not in ['id','kind','allocated','remaining','source','source_row','linked_receipt_numbers','settlement_amount','withholding']})
+        # Recompute on every save, including changes to amount or an existing tag.
+        # Ignore client-supplied tax totals whenever a tag is selected.
+        if str(body.get('tax_tag') or '').strip():
+            try:
+                body.update(purchase_vat(b['amount'], body['tax_tag']))
+            except ValueError as e:return jsonify(error=str(e)),400
+        elif old and json.loads(old['body']).get('vat_basis') == 'inclusive':
+            for field in ['vat_basis','vat_rate','input_tax_goods','input_tax_services','net_tax_base']:
+                body.pop(field,None)
         for field in ['input_tax_goods','input_tax_services']:
-            if field in b:
+            if field in b and not str(body.get('tax_tag') or '').strip():
                 try:body[field]=cents(b[field])/100
                 except ValueError as e:return jsonify(error=str(e)),400
         if float(body.get('input_tax_goods',0))+float(body.get('input_tax_services',0))>b['amount']:return jsonify(error='Recorded input taxes exceed the gross amount'),400
-        if 'input_tax_goods' in b or 'input_tax_services' in b:body['net_tax_base']=round(b['amount']-float(body.get('input_tax_goods',0))-float(body.get('input_tax_services',0)),2)
+        if not body.get('tax_tag') and ('input_tax_goods' in b or 'input_tax_services' in b):body['net_tax_base']=round(b['amount']-float(body.get('input_tax_goods',0))-float(body.get('input_tax_services',0)),2)
         if body.get('collection')=='COS_Allowance':body.setdefault('treatment','advance')
         treatment=body.get('treatment','business')
         if treatment not in ['business','personal','advance','no_receipt']:return jsonify(error='Choose a valid expense treatment'),400
+        if body.get('withholding_status')=='yes' and body.get('withholding_mode')=='auto':
+            try:body.update(automatic_withholding(b['amount'],body.get('tax_tag')))
+            except ValueError as e:return jsonify(error=str(e)),400
+            b['withholding']=body['withholding']
+            body['settlement_amount']=round(b['amount']-body['withholding'],2)
+            b.pop('net_override',None)
+        elif body.get('withholding_status')=='no':
+            body.update(withholding=0,withholding_rate=0,withholding_base=0)
+            b['withholding']=0
+        elif body.get('withholding_mode')=='manual':
+            body.pop('withholding_rate',None);body.pop('withholding_base',None)
         if b.get('withholding') is not None:
             try:body['withholding']=cents(b['withholding'])/100
             except ValueError as e:return jsonify(error=str(e)),400
@@ -429,7 +458,7 @@ def export():
         rs=records(c)
         for kind in ['payment','receipt']:
             s=w.create_sheet(kind.title()+'s')
-            fields=FIELDS+['transfer_amount','personal_amount','personal_note','settlement_amount','withholding','linked_receipt_numbers','allocated','remaining','source','source_row']
+            fields=FIELDS+['transfer_amount','personal_amount','personal_note','tax_tag','net_tax_base','input_tax_goods','input_tax_services','settlement_amount','withholding','linked_receipt_numbers','allocated','remaining','source','source_row']
             s.append(fields)
             for r in rs:
                 if r['kind']==kind:

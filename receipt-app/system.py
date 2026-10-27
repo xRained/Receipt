@@ -69,6 +69,9 @@ def install(app, get_data, db, records, cents, auto_match):
             rs=records(c);suppliers=supplier_rows(c)
             try:draft,warnings=extract(b.get('text',''),b.get('mode','auto'),suppliers,rs)
             except ValueError as e:return jsonify(error=str(e)),400
+            if draft.get('code'):
+                account=c.execute('SELECT title FROM accounts WHERE code=?',(draft['code'],)).fetchone()
+                if account:draft['account']=account['title']
             if b.get('image'):
                 c.execute('UPDATE documents SET text=? WHERE image=?',(b.get('text',''),b['image']))
             draft['receipt_month']=b.get('month') or date.today().strftime('%Y-%m')

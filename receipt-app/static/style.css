@@ -11,3 +11,4 @@ aside{overflow-y:auto}.local{position:static;margin-top:25px}.navLabel{font-size
 .moduleFilters{display:flex;gap:10px;align-items:end;flex-wrap:wrap;width:100%;margin:12px 0}.moduleFilters[hidden]{display:none}.moduleFilters label{display:grid;gap:5px;font-size:12px}.moduleFilters input,.moduleFilters select{max-width:190px;padding:8px}.moduleFilters #moduleQuery{max-width:none;width:310px}.toolbar:has(.moduleFilters){flex-wrap:wrap}
 
 .moduleFilters [hidden]{display:none}
+.pasteTarget{margin:16px 0;padding:18px;border:2px dashed #9b74bd;border-radius:10px;background:#f8f0fc;color:#614378;cursor:text}.pasteTarget:focus{outline:3px solid #cbb2df;outline-offset:2px}.vatBreakdown{padding:18px;background:#edf7ee;border:1px solid #b9d7bd;border-radius:9px;color:#244f30;font-size:15px;font-weight:600;line-height:1.8}.pasteTarget kbd{font-weight:700}
