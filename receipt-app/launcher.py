@@ -3,7 +3,8 @@ import json
 import os
 import signal
 import socket
-import subprocess
+import runpy
+import threading
 import sys
 import time
 import urllib.request
@@ -21,8 +22,6 @@ def health():
 
 
 def main():
-    from version import version
-    expected_version=version()
     current=health()
     if current and current.get('app')=='tally-local' and Path(current.get('workspace','')).resolve()==ROOT:
         pid=current.get('pid')
@@ -37,14 +36,27 @@ def main():
     elif current:raise RuntimeError('Another app is serving port 5050. Close it before starting Tally.')
     if port_in_use():raise RuntimeError('Port 5050 is occupied by an unrecognized process. Close it before starting Tally.')
     (ROOT/'data').mkdir(exist_ok=True)
-    with open(ROOT/'data'/'server.log','ab') as out,open(ROOT/'data'/'server-error.log','ab') as err:
-        process=subprocess.Popen([sys.executable,str(ROOT/'app.py')],cwd=ROOT,stdout=out,stderr=err,creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
+    print('Receipt app: '+URL,flush=True)
+    print('Keep this window open. Press Ctrl+C or close this window to stop the server.',flush=True)
+    launch_foreground()
+
+
+def open_when_ready():
     for _ in range(100):
         current=health()
-        if current and current.get('app')=='tally-local' and current.get('workspace')==str(ROOT) and current.get('pid')==process.pid and current.get('version')==expected_version:webbrowser.open(URL);return
-        if process.poll() is not None:break
+        if current and current.get('app')=='tally-local' and current.get('workspace')==str(ROOT) and current.get('pid')==os.getpid():
+            webbrowser.open(URL);return
         time.sleep(.2)
-    raise RuntimeError('The server did not start. See data/server-error.log.')
+    print('Browser opening timed out. Check the server messages in this window.',flush=True)
+
+
+def launch_foreground():
+    # The server shares this console and process; there is no detached child.
+    threading.Thread(target=open_when_ready,daemon=True).start()
+    try:
+        runpy.run_path(str(ROOT/'app.py'),run_name='__main__')
+    except KeyboardInterrupt:
+        print('\nReceipt app stopped.',flush=True)
 
 
 def port_in_use():

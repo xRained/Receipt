@@ -19,8 +19,11 @@ echo Installing required packages...
 if errorlevel 1 goto failed
 
 :launch
+title Receipt app - Ctrl+C to stop
 %RECEIPT_PYTHON% launcher.py
 if errorlevel 1 goto failed
+echo Receipt app stopped. You can close this window or run start.bat again.
+pause
 exit /b 0
 
 :failed
