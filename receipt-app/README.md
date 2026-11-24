@@ -62,3 +62,5 @@ Transaction rows provide Print and Delete buttons. Print opens an A4-friendly re
 Select all shown entries checks transaction rows in the current view. Delete selected removes only those entries. Delete all entries (all months) removes payment and receipt entries across the workspace. Both actions require confirmation and create a database backup first; suppliers, COA, settings, templates and automation remain.
 
 `start.bat` restarts the server for the same workspace and keeps it running in the CMD window with live logs. Press Ctrl+C or close that window to stop the server. No hidden server process is created. Unrelated processes using port 5050 are not terminated.
+
+The repository also includes the clean `receipt-app/data/receipts.sqlite3` database and `receipt-app/data/templates/` workbook files directly. These contain supplier/COA masters and configuration with no transaction entries or receipt images. Keep each user's existing data folder when updating; copying this clean folder over it replaces that user's database. Runtime images, logs, and deletion backups remain excluded from commits.
