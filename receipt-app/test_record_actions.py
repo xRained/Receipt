@@ -56,3 +56,22 @@ class RecordActionTests(unittest.TestCase):
             body=json.loads(c.execute('SELECT body FROM records WHERE id=?',(response.json['id'],)).fetchone()[0])
         self.assertEqual(body['payee_type'],'proprietor')
         self.assertEqual(body['proprietor'],'Example Owner')
+
+    def test_bulk_delete_all_keeps_masters_settings_templates_and_images(self):
+        with module.db() as c:
+            before={t:[tuple(r) for r in c.execute('SELECT * FROM '+t)] for t in ['suppliers','accounts','workspace_settings','templates','supplier_profiles']}
+        response=self.client.post('/api/records/delete-selected',json={'all_entries':True})
+        self.assertEqual(response.status_code,200,response.json)
+        with module.db() as c:
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM records').fetchone()[0],0)
+            self.assertEqual(c.execute('PRAGMA foreign_key_check').fetchall(),[])
+            for t,rows in before.items():self.assertEqual([tuple(r) for r in c.execute('SELECT * FROM '+t)],rows,t)
+            self.assertIsNotNone(c.execute("SELECT * FROM documents WHERE id='test-doc'").fetchone())
+
+    def test_bulk_selection_is_validated_before_any_delete(self):
+        response=self.client.post('/api/records/delete-selected',json={'ids':['delete-payment','missing']})
+        self.assertEqual(response.status_code,404)
+        with module.db() as c:self.assertIsNotNone(c.execute("SELECT * FROM records WHERE id='delete-payment'").fetchone())
+        response=self.client.post('/api/records/delete-selected',json={'ids':['delete-payment']})
+        self.assertEqual(response.status_code,200)
+        with module.db() as c:self.assertIsNotNone(c.execute("SELECT * FROM records WHERE id='keep-receipt'").fetchone())

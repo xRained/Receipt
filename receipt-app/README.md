@@ -58,3 +58,5 @@ The source-cell and formula audit is `EXCEL_WORKFLOW_AUDIT.md`; it records findi
 ## Record actions
 
 Transaction rows provide Print and Delete buttons. Print opens an A4-friendly record with separate payee type, registered name, trading name, and proprietor fields; use the browser print dialog to print or save PDF. Delete requests confirmation, saves a complete SQLite snapshot under `data/deleted-backups/`, removes the record and its reconciliation links, and detaches receipt images without deleting the files or supplier/COA masters. To recover, stop the server and restore the chosen database snapshot to `data/receipts.sqlite3`; this restores the whole database to that point in time.
+
+Select all shown entries checks transaction rows in the current view. Delete selected removes only those entries. Delete all entries (all months) removes payment and receipt entries across the workspace. Both actions require confirmation and create a database backup first; suppliers, COA, settings, templates and automation remain.

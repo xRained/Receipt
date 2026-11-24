@@ -397,19 +397,34 @@ def save():
 
 @app.post('/api/records/<rid>/delete')
 def delete_record(rid):
+    return remove_records([rid])
+
+
+@app.post('/api/records/delete-selected')
+def delete_selected_records():
+    body=request.get_json(silent=True) or {}
+    ids=body.get('ids')
+    if body.get('all_entries') is True:
+        with db() as c:ids=[r['id'] for r in c.execute('SELECT id FROM records')]
+    if not isinstance(ids,list) or not ids or any(not isinstance(rid,str) or not rid for rid in ids):
+        return jsonify(error='Select at least one entry'),400
+    return remove_records(list(dict.fromkeys(ids)))
+
+
+def remove_records(ids):
     folder=DATA/'deleted-backups';folder.mkdir(exist_ok=True)
     with db() as c:
-        if not c.execute('SELECT 1 FROM records WHERE id=?',(rid,)).fetchone():
+        if any(not c.execute('SELECT 1 FROM records WHERE id=?',(rid,)).fetchone() for rid in ids):
             return jsonify(error='Record not found'),404
         backup=folder/('before-delete-'+datetime.now().strftime('%Y%m%d-%H%M%S-%f')+'.sqlite3')
         with closing(sqlite3.connect(backup)) as target:c.backup(target)
         c.execute('BEGIN IMMEDIATE')
         for table in ['allocations','match_audit','match_blocks','presence_links','presence_dismissals']:
-            c.execute('DELETE FROM '+table+' WHERE payment=? OR receipt=?',(rid,rid))
-        c.execute('DELETE FROM returns WHERE payment=?',(rid,))
-        c.execute('UPDATE documents SET record_id=NULL WHERE record_id=?',(rid,))
-        c.execute('DELETE FROM records WHERE id=?',(rid,))
-    return jsonify(ok=True,backup=backup.name)
+            c.executemany('DELETE FROM '+table+' WHERE payment=? OR receipt=?',[(rid,rid) for rid in ids])
+        c.executemany('DELETE FROM returns WHERE payment=?',[(rid,) for rid in ids])
+        c.executemany('UPDATE documents SET record_id=NULL WHERE record_id=?',[(rid,) for rid in ids])
+        c.executemany('DELETE FROM records WHERE id=?',[(rid,) for rid in ids])
+    return jsonify(ok=True,deleted=len(ids),backup=backup.name)
 
 
 @app.get('/records/<rid>/print')
