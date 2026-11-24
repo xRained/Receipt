@@ -54,3 +54,7 @@ OCR runs through Tesseract.js in the browser; initial engine and language downlo
 Run `python -m unittest discover -s . -p "test_*.py"` from this directory. Tests use separate temporary databases. They cover fourteen modules, shared master edits, grouped/partial matches, tax amount preservation, duplicate photo intake, attachment, returns, undo/idempotency, and complete workbook tab generation with cached totals.
 
 The source-cell and formula audit is `EXCEL_WORKFLOW_AUDIT.md`; it records findings from before the system changes and is historical. `USER_GUIDE.md` describes the current implementation. Raw all-sheet evidence remains in `data/workbook-audit.json`.
+
+## Record actions
+
+Transaction rows provide Print and Delete buttons. Print opens an A4-friendly record with separate payee type, registered name, trading name, and proprietor fields; use the browser print dialog to print or save PDF. Delete requests confirmation, saves a complete SQLite snapshot under `data/deleted-backups/`, removes the record and its reconciliation links, and detaches receipt images without deleting the files or supplier/COA masters. To recover, stop the server and restore the chosen database snapshot to `data/receipts.sqlite3`; this restores the whole database to that point in time.

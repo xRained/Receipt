@@ -8,7 +8,7 @@ import hashlib
 from datetime import date, datetime
 from pathlib import Path
 from difflib import SequenceMatcher
-from contextlib import contextmanager
+from contextlib import contextmanager, closing
 
 from supplier_profiles import suppliers as supplier_rows, annotate, remember_from_record, learn_from_allocations
 import openpyxl
@@ -282,6 +282,8 @@ def save():
     b = request.get_json()
     if b.get('kind') not in ['payment', 'receipt']: return jsonify(error='Choose payment or receipt'), 400
     if not str(b.get('company', '')).strip(): return jsonify(error='Company / payee is required'), 400
+    if b.get('payee_type','') not in ['','proprietor','corporation']:
+        return jsonify(error='Choose proprietor or corporation'),400
     if 'withholding_status' in b:
         if b['withholding_status'] not in ['yes','no']:
             return jsonify(error='Choose with withholding or no withholding'),400
@@ -393,6 +395,31 @@ def save():
     linked=app.refresh_material_presence() if hasattr(app,'refresh_material_presence') else 0
     return jsonify(id=rid, matching=auto_match(),automatic_receipt_links=linked)
 
+@app.post('/api/records/<rid>/delete')
+def delete_record(rid):
+    folder=DATA/'deleted-backups';folder.mkdir(exist_ok=True)
+    with db() as c:
+        if not c.execute('SELECT 1 FROM records WHERE id=?',(rid,)).fetchone():
+            return jsonify(error='Record not found'),404
+        backup=folder/('before-delete-'+datetime.now().strftime('%Y%m%d-%H%M%S-%f')+'.sqlite3')
+        with closing(sqlite3.connect(backup)) as target:c.backup(target)
+        c.execute('BEGIN IMMEDIATE')
+        for table in ['allocations','match_audit','match_blocks','presence_links','presence_dismissals']:
+            c.execute('DELETE FROM '+table+' WHERE payment=? OR receipt=?',(rid,rid))
+        c.execute('DELETE FROM returns WHERE payment=?',(rid,))
+        c.execute('UPDATE documents SET record_id=NULL WHERE record_id=?',(rid,))
+        c.execute('DELETE FROM records WHERE id=?',(rid,))
+    return jsonify(ok=True,backup=backup.name)
+
+
+@app.get('/records/<rid>/print')
+def print_record(rid):
+    with db() as c:
+        row=next((r for r in records(c) if r['id']==rid),None)
+    if not row:return 'Record not found',404
+    return render_template('print_record.html',record=row)
+
+
 @app.post('/api/upload')
 def upload():
     f = request.files.get('file')
@@ -458,7 +485,7 @@ def export():
         rs=records(c)
         for kind in ['payment','receipt']:
             s=w.create_sheet(kind.title()+'s')
-            fields=FIELDS+['transfer_amount','personal_amount','personal_note','tax_tag','net_tax_base','input_tax_goods','input_tax_services','settlement_amount','withholding','linked_receipt_numbers','allocated','remaining','source','source_row']
+            fields=FIELDS+['payee_type','business_name','proprietor','transfer_amount','personal_amount','personal_note','tax_tag','net_tax_base','input_tax_goods','input_tax_services','settlement_amount','withholding','linked_receipt_numbers','allocated','remaining','source','source_row']
             s.append(fields)
             for r in rs:
                 if r['kind']==kind:

@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Record {{ record.reference or record.receipt_no or record.id }}</title>
+<style>body{font:14px Arial,sans-serif;max-width:800px;margin:35px auto;color:#222}h1{font-size:24px}dl{display:grid;grid-template-columns:190px 1fr;gap:12px}dt{font-weight:bold}dd{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}button{padding:10px 20px}@media print{button{display:none}body{margin:0}@page{size:A4;margin:20mm}}</style></head>
+<body><button onclick="window.print()">Print / Save as PDF</button><h1>{{ record.collection or record.kind|title }}</h1><dl>
+{% for key,label in [('date','Date'),('payee_type','Payee type'),('company','Payee / registered name'),('business_name','Company / trading name'),('proprietor','Proprietor / owner'),('tin','TIN'),('address','Address'),('reference','Payment reference'),('receipt_no','Receipt / S.I. number'),('method','Payment method'),('code','Account code'),('account','Account title'),('project','Project'),('remarks','Description / remarks'),('tax_tag','Tax tag')] %}
+<dt>{{ label }}</dt><dd>{{ record.get(key,'') or '—' }}</dd>{% endfor %}
+{% for key,label in [('amount','Principal (PHP)'),('fee','Fees (PHP)'),('input_tax_goods','Input VAT — goods (PHP)'),('input_tax_services','Input VAT — services (PHP)'),('withholding','Withholding (PHP)'),('settlement_amount','Net payable before fees (PHP)')] %}
+<dt>{{ label }}</dt><dd>{{ '{:,.2f}'.format(record.get(key,0)|float) }}</dd>{% endfor %}
+</dl><p>Record ID: {{ record.id }}</p></body></html>

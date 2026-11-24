@@ -22,7 +22,7 @@ def annotate(rows,c):
         matches=lookup.get(norm(row.get('company')),[])
         businesses={norm(p['business_name']) for p in matches if p['business_name']}
         if len(businesses)==1:
-            row['business_name']=matches[0]['business_name'];row['proprietor']=matches[0]['proprietor']
+            row['business_name']=row.get('business_name') or matches[0]['business_name'];row['proprietor']=row.get('proprietor') or matches[0]['proprietor']
     links={norm(r['alias']):r['legal_name'] for r in c.execute('SELECT alias,legal_name FROM supplier_name_links')}
     for row in rows:
         legal=links.get(norm(row.get('company')),row.get('company',''))
